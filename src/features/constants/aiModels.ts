@@ -353,7 +353,7 @@ const modelDefinitions: Record<AIService, ModelInfo[]> = {
     { name: 'claude-3-haiku-20240307', multiModal: true },
   ],
   google: [
-     {
+    {
       name: 'gemini-3.8-flash',
       multiModal: true,
     },
