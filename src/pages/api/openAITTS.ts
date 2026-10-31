@@ -12,6 +12,7 @@ import { routePolicies } from '@/lib/accessPolicy/routePolicies'
  *   GEMINI_TTS_MODEL    既定 gemini-3.8-flash-lite-tts
  *   GEMINI_TTS_STYLE    演技指示の既定値
  *   GOOGLE_TTS_API_KEY  Chirp3 HD 用キー（任意 / ハイブリッド・フォールバック用）
+ *                       GOOGLE_TTS_KEY という名前でも読み込む（既存 env との互換）
  *   HYBRID_MIN_CHARS    N>0 のとき N 文字未満は Chirp3 HD（無料枠）へ
  */
 const GEMINI_ENDPOINT =
@@ -19,6 +20,45 @@ const GEMINI_ENDPOINT =
 const CHIRP_ENDPOINT = 'https://texttospeech.googleapis.com/v1/text:synthesize'
 const DEFAULT_GEMINI_MODEL = 'gemini-3.8-flash-lite-tts'
 const LANGUAGE_CODE = 'ja-JP'
+
+/** 429 / 5xx のときの再試行回数と待ち時間（指数バックオフ） */
+const MAX_RETRIES = 2
+const BASE_RETRY_DELAY_MS = 700
+/** 同じ台詞の再合成を避けるキャッシュ（LRU 相当） */
+const CACHE_LIMIT = 300
+const audioCache = new Map<string, Buffer>()
+
+function cacheGet(key: string): Buffer | undefined {
+  const hit = audioCache.get(key)
+  if (!hit) return undefined
+  audioCache.delete(key)
+  audioCache.set(key, hit)
+  return hit
+}
+
+function cacheSet(key: string, value: Buffer): void {
+  audioCache.set(key, value)
+  while (audioCache.size > CACHE_LIMIT) {
+    const oldest = audioCache.keys().next().value
+    if (oldest === undefined) break
+    audioCache.delete(oldest)
+  }
+}
+
+/** Chirp3 HD のキー。GOOGLE_TTS_KEY という既存名でも動くようにする */
+function getChirpKey(): string {
+  return (
+    process.env.GOOGLE_TTS_API_KEY ||
+    process.env.GOOGLE_TTS_KEY ||
+    ''
+  ).trim()
+}
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+function isRetryableStatus(status: number): boolean {
+  return status === 429 || status === 500 || status === 503 || status === 504
+}
 
 /** Kit の voice 名 → [Gemini の声, Chirp3 HD の声] */
 const VOICE_MAP: Record<string, [string, string]> = {
@@ -142,35 +182,51 @@ async function synthesizeWithGemini(
     generation_config: { speech_config: [{ voice }] },
   }
 
-  const response = await fetch(GEMINI_ENDPOINT, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
-    body: JSON.stringify(body),
-  })
+  let lastStatus = 0
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    const response = await fetch(GEMINI_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+      body: JSON.stringify(body),
+    })
 
-  if (!response.ok) {
+    if (response.ok) {
+      const payload = (await response.json()) as GeminiResponse
+      const base64 = extractGeminiAudio(payload)
+      if (!base64) throw new Error('Gemini TTS returned no audio data')
+      return Buffer.from(base64, 'base64')
+    }
+
+    lastStatus = response.status
     const errorText = await response.text()
-    logger.error('Gemini TTS upstream error:', {
+    // レート制限（429）は致命ではないので warn に留める
+    const logFn = isRetryableStatus(response.status)
+      ? logger.warn
+      : logger.error
+    logFn.call(logger, 'Gemini TTS upstream error:', {
       status: response.status,
-      body: errorText.slice(0, 500),
+      attempt,
+      body: errorText.slice(0, 300),
       model,
       voice,
     })
-    throw new Error(`Gemini TTS upstream error: ${response.status}`)
-  }
 
-  const payload = (await response.json()) as GeminiResponse
-  const base64 = extractGeminiAudio(payload)
-  if (!base64) throw new Error('Gemini TTS returned no audio data')
-  return Buffer.from(base64, 'base64')
+    if (!isRetryableStatus(response.status) || attempt === MAX_RETRIES) {
+      throw new Error(`Gemini TTS upstream error: ${response.status}`)
+    }
+    await sleep(BASE_RETRY_DELAY_MS * 2 ** attempt)
+  }
+  throw new Error(`Gemini TTS upstream error: ${lastStatus}`)
 }
 
 async function synthesizeWithChirp(
   text: string,
   voice: string
 ): Promise<Buffer> {
-  const apiKey = (process.env.GOOGLE_TTS_API_KEY || '').trim()
-  if (!apiKey) throw new Error('GOOGLE_TTS_API_KEY is not set')
+  const apiKey = getChirpKey()
+  if (!apiKey) {
+    throw new Error('GOOGLE_TTS_API_KEY / GOOGLE_TTS_KEY is not set')
+  }
 
   const body = {
     input: { text },
@@ -224,24 +280,42 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
     requestedModel.startsWith('chirp') ||
     (hybridMinChars > 0 && hasChirpKey && message.length < hybridMinChars)
 
+  const cacheKey = `${preferChirp ? 'chirp' : 'gemini'}|${voices.gemini}|${style}|${message}`
+  const cached = cacheGet(cacheKey)
+
   let audio: Buffer
-  try {
-    audio = preferChirp
-      ? await synthesizeWithChirp(message, voices.chirp)
-      : await synthesizeWithGemini(message, voices.gemini, style)
-  } catch (error) {
-    logger.error('TTS failed, trying the other engine:', error)
+  if (cached) {
+    audio = cached
+  } else {
     try {
       audio = preferChirp
-        ? await synthesizeWithGemini(message, voices.gemini, style)
-        : await synthesizeWithChirp(message, voices.chirp)
-    } catch (fallbackError) {
-      logger.error('Both TTS engines failed:', fallbackError)
-      return res.status(500).json({
-        error: 'Failed to generate speech',
-        errorCode: 'TTSError',
-      })
+        ? await synthesizeWithChirp(message, voices.chirp)
+        : await synthesizeWithGemini(message, voices.gemini, style)
+    } catch (error) {
+      const message1 = error instanceof Error ? error.message : String(error)
+      logger.warn('TTS failed, trying the other engine:', message1)
+      try {
+        audio = preferChirp
+          ? await synthesizeWithGemini(message, voices.gemini, style)
+          : await synthesizeWithChirp(message, voices.chirp)
+      } catch (fallbackError) {
+        const message2 =
+          fallbackError instanceof Error
+            ? fallbackError.message
+            : String(fallbackError)
+        logger.error('Both TTS engines failed:', { message1, message2 })
+        return res.status(500).json({
+          error: 'Failed to generate speech',
+          errorCode: 'TTSError',
+          // 原因の切り分け用（秘密情報は含まない）
+          detail: `${message1} / ${message2}`,
+          hint: getChirpKey()
+            ? undefined
+            : 'GOOGLE_TTS_API_KEY が未設定のためフォールバックが使えません',
+        })
+      }
     }
+    cacheSet(cacheKey, audio)
   }
 
   if (stream) {
