@@ -10,7 +10,11 @@ import {
   synthesizeWithChirp,
   synthesizeWithGemini,
   KIT_PATCH_VERSION,
+  getSentModel,
 } from './openAITTS'
+
+/** この診断ページ自身が持つ直値。openAITTS 側と食い違えば「別物」と分かる */
+const LOCAL_LITERAL = 'gemini-3.8-flash-lite-tts'
 
 type Check = {
   name: string
@@ -36,6 +40,8 @@ const esc = (s: string) =>
 
 /** 実際に使われるモデル名を素で叩き、HTTPステータスと本文をそのまま返す */
 async function rawCall(model: string, voice: string, style: string) {
+  // model 引数は使わず、必ずこのファイルの直値で叩く
+  model = LOCAL_LITERAL
   const apiKey = (process.env.GEMINI_TTS_API_KEY || '').trim()
   const started = Date.now()
   if (!apiKey) {
@@ -198,6 +204,14 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
 
   const env = [
     ['KIT_PATCH_VERSION', KIT_PATCH_VERSION],
+    ['送信モデル（openAITTSの直値）', getSentModel()],
+    ['診断ページの直値', LOCAL_LITERAL],
+    [
+      '整合性',
+      LOCAL_LITERAL === getSentModel()
+        ? '一致'
+        : '不一致（openAITTS.ts が古い）',
+    ],
     [
       'GEMINI_TTS_MODEL（env・生値）',
       process.env.GEMINI_TTS_MODEL === undefined
