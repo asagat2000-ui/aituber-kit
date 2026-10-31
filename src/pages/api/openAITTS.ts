@@ -25,6 +25,29 @@ const LANGUAGE_CODE = 'ja-JP'
 const MAX_RETRIES = 3
 const BASE_RETRY_DELAY_MS = 900
 const MAX_RETRY_DELAY_MS = 5000
+
+/**
+ * 1日の上限に当たったら、しばらく Gemini を試さずに即フォールバックする。
+ * サーバーレスのインスタンスが再利用される間だけ効く、ベストエフォートの仕組み。
+ */
+const DAILY_QUOTA_COOLDOWN_MS = 10 * 60 * 1000
+let geminiCooldownUntil = 0
+
+/** 旧世代（1.x / 2.x / 3.0〜3.7）は 1日100回などの厳しい上限を持つので使わない */
+const LEGACY_MODEL_PATTERN = /gemini-(1\.|2\.|3\.[0-7])/
+
+/**
+ * 実際に使うモデル名を決める。
+ * 環境変数に旧世代の名前が入っていても、既定の 3.8 に読み替える。
+ */
+export function resolveModel(): { model: string; ignored: string | null } {
+  const fromEnv = (process.env.GEMINI_TTS_MODEL || '').trim()
+  if (!fromEnv) return { model: DEFAULT_GEMINI_MODEL, ignored: null }
+  if (LEGACY_MODEL_PATTERN.test(fromEnv.toLowerCase())) {
+    return { model: DEFAULT_GEMINI_MODEL, ignored: fromEnv }
+  }
+  return { model: fromEnv, ignored: null }
+}
 /** 同じ台詞の再合成を避けるキャッシュ（LRU 相当） */
 const CACHE_LIMIT = 300
 const audioCache = new Map<string, Buffer>()
@@ -138,6 +161,16 @@ export function resolveStyle(emotion: string | undefined): string {
   return EMOTION_STYLE[key] || '自然で感情豊かな話し方で'
 }
 
+/**
+ * 待っても回復しない類の 429 かどうか。
+ * 「1日あたり100回」のような上限は、その場で待つだけ無駄になる。
+ */
+function isDailyQuota(errorText: string, retryDelayMs: number | null): boolean {
+  if (/per day|perday|daily|FreeTier/i.test(errorText)) return true
+  if (retryDelayMs !== null && retryDelayMs > 60000) return true
+  return false
+}
+
 function extractGeminiAudio(payload: GeminiResponse): string | null {
   const steps = Array.isArray(payload.steps) ? [...payload.steps].reverse() : []
   for (const step of steps) {
@@ -178,7 +211,16 @@ export async function synthesizeWithGemini(
 ): Promise<Buffer> {
   const apiKey = (process.env.GEMINI_TTS_API_KEY || '').trim()
   if (!apiKey) throw new Error('GEMINI_TTS_API_KEY is not set')
-  const model = (process.env.GEMINI_TTS_MODEL || DEFAULT_GEMINI_MODEL).trim()
+  if (Date.now() < geminiCooldownUntil) {
+    throw new Error('Gemini TTS is cooling down after a quota error')
+  }
+  const { model, ignored } = resolveModel()
+  if (ignored) {
+    logger.warn('GEMINI_TTS_MODEL is outdated; using the default instead', {
+      ignored,
+      used: model,
+    })
+  }
 
   const body = {
     model,
@@ -233,9 +275,21 @@ export async function synthesizeWithGemini(
       )
     }
 
-    // 429 は Google が指定する待ち時間を優先する（体感 1〜2 秒で回復する）
+    // 429 は Google が指定する待ち時間を優先する
     const suggested =
       response.status === 429 ? parseRetryDelayMs(errorText) : null
+
+    // 1日の上限なら待っても回復しない。無音を長引かせず即フォールバックする。
+    if (response.status === 429 && isDailyQuota(errorText, suggested)) {
+      geminiCooldownUntil = Date.now() + DAILY_QUOTA_COOLDOWN_MS
+      logger.warn(
+        'Gemini TTS: daily quota reached, skipping Gemini for a while'
+      )
+      throw new Error(
+        `Gemini TTS daily quota exceeded: ${errorText.slice(0, 240)}`
+      )
+    }
+
     const wait =
       suggested ??
       Math.min(BASE_RETRY_DELAY_MS * 2 ** attempt, MAX_RETRY_DELAY_MS)
