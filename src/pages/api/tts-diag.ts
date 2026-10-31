@@ -1,7 +1,9 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 import {
   GEMINI_ENDPOINT,
+  DEFAULT_GEMINI_MODEL,
   getChirpKey,
+  PREFERRED_GEMINI_TTS_MODEL,
   resolveModel,
   resolveStyle,
   resolveVoices,
