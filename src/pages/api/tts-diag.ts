@@ -204,6 +204,10 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
 
   const env = [
     ['KIT_PATCH_VERSION', KIT_PATCH_VERSION],
+    [
+      'TTS_PRIMARY（既定 chirp）',
+      (process.env.TTS_PRIMARY || '未設定 → chirp').toString(),
+    ],
     ['送信モデル（openAITTSの直値）', getSentModel()],
     ['診断ページの直値', LOCAL_LITERAL],
     [
