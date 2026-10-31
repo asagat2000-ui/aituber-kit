@@ -9,6 +9,7 @@ import {
   resolveVoices,
   synthesizeWithChirp,
   synthesizeWithGemini,
+  KIT_PATCH_VERSION,
 } from './openAITTS'
 
 type Check = {
@@ -79,11 +80,12 @@ async function rawCall(model: string, voice: string, style: string) {
     }
     const json = (await r.json()) as Record<string, unknown>
     const size = JSON.stringify(json).length
+    const served = typeof json.model === 'string' ? json.model : '(不明)'
     return {
       status: r.status,
       ms,
       errorText: '',
-      keys: `レスポンス項目: ${Object.keys(json).join(', ')} / 約${size}文字`,
+      keys: `応答したモデル: ${served} / レスポンス項目: ${Object.keys(json).join(', ')} / 約${size}文字`,
     }
   } catch (error) {
     return {
@@ -195,7 +197,13 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
     .join('')
 
   const env = [
-    ['GEMINI_TTS_MODEL（env）', envModel || '未設定（既定値を使用）'],
+    ['KIT_PATCH_VERSION', KIT_PATCH_VERSION],
+    [
+      'GEMINI_TTS_MODEL（env・生値）',
+      process.env.GEMINI_TTS_MODEL === undefined
+        ? 'undefined（変数そのものが無い）'
+        : JSON.stringify(process.env.GEMINI_TTS_MODEL),
+    ],
     [
       '実際に使うモデル',
       ignored ? `${model}（env の ${ignored} は旧世代のため無視）` : model,
@@ -227,7 +235,7 @@ a.btn{display:block;text-align:center;padding:14px;background:#111;color:#fff;bo
 .note{font-size:12px;color:#555}
 pre{background:#fff;padding:10px;border-radius:8px;font-size:11px;overflow:auto}
 </style></head><body>
-<h1>TTS 診断（このページをスクショしてください）</h1>
+<h1>TTS 診断 <span style="font-weight:400;font-size:13px;color:#666">build: ${KIT_PATCH_VERSION}</span></h1>
 <div class="banner">${esc(banner.text)}</div>
 <table><tr><th>テスト</th><th>結果</th><th>HTTP</th><th>時間</th><th>bytes</th><th>詳細</th></tr>${rows}</table>
 <table><tr><th>環境変数</th><th>値</th></tr>${env}</table>
