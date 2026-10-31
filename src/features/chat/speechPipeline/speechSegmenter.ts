@@ -10,10 +10,52 @@ const CODE_DELIMITER = '```'
 // 原理的には到達しないが、正規表現の変更等による退行時のフリーズを防ぐ。
 const MAX_ITERATIONS = 100000
 const DEFAULT_COMMA_MIN_CHARS = 10
+// TTSの1リクエストに載せる上限（Chirp 3 HDの5000バイト制限に対する安全域）
+const MAX_BATCH_CHARS = 1200
 
 export type SpeechSegmenterOptions = {
   /** 読点より前の最小文字数。低遅延TTSでは5（読点込み6文字）を指定する。 */
   firstSpeechCommaMinChars?: number
+  /**
+   * バッチモード。trueなら文単位で区切らず、返答の完了時にまとめて1回だけ発話する。
+   * 1返答あたりのTTSリクエストが 5〜7回 → 1回 になり、1日100回上限のTTSでも長く話せる。
+   * 代わりに最初の音が出るまで待ち時間が増える（文単位の先読みがなくなるため）。
+   */
+  batch?: boolean
+}
+
+/**
+ * バッチモードの既定値。env `NEXT_PUBLIC_BATCH_SPEECH=true` で有効化する。
+ * 既定は false（従来どおり文単位で先に喋る）。
+ */
+export function isBatchSpeechEnabled(): boolean {
+  const raw = (process.env.NEXT_PUBLIC_BATCH_SPEECH || '').trim().toLowerCase()
+  return raw === 'true' || raw === '1' || raw === 'on'
+}
+
+/**
+ * TTSの1リクエストに載せる長さへ分割する。
+ * 上限以内なら1要素（＝1リクエスト）のまま返す。
+ */
+export function splitForTts(text: string): string[] {
+  if (text.length <= MAX_BATCH_CHARS) return [text]
+  const chunks: string[] = []
+  let rest = text
+  while (rest.length > 0) {
+    if (rest.length <= MAX_BATCH_CHARS) {
+      chunks.push(rest)
+      break
+    }
+    const boundary = Math.max(
+      rest.lastIndexOf('。', MAX_BATCH_CHARS),
+      rest.lastIndexOf('、', MAX_BATCH_CHARS)
+    )
+    const cut =
+      boundary > MAX_BATCH_CHARS * 0.4 ? boundary + 1 : MAX_BATCH_CHARS
+    chunks.push(rest.slice(0, cut))
+    rest = rest.slice(cut)
+  }
+  return chunks
 }
 
 const SHORT_FIRST_SEGMENT_VOICES = new Set([
@@ -57,10 +99,12 @@ export class SpeechSegmenter {
   private awaitingLangLine = false
   private hasEmittedSpeech = false
   private readonly firstSpeechCommaMinChars: number
+  private readonly batch: boolean
 
   constructor(options: SpeechSegmenterOptions = {}) {
     this.firstSpeechCommaMinChars =
       options.firstSpeechCommaMinChars ?? DEFAULT_COMMA_MIN_CHARS
+    this.batch = options.batch ?? isBatchSpeechEnabled()
   }
 
   push(chunk: string): SegmenterEvent[] {
@@ -85,7 +129,11 @@ export class SpeechSegmenter {
         this.speechBuffer += this.displayHold
         this.displayHold = ''
       }
-      this.drainSentences(events, { force: true })
+      if (this.batch) {
+        this.emitBatchSpeech(events)
+      } else {
+        this.drainSentences(events, { force: true })
+      }
     } else {
       // ストリームがコードブロック内で終端した場合はコードとして確定（現行踏襲）
       this.emitCode(events, this.codeBuffer)
@@ -181,6 +229,8 @@ export class SpeechSegmenter {
     events: SegmenterEvent[],
     { force = false }: { force?: boolean } = {}
   ) {
+    // バッチモードでは文の確定をせず、flush まで speechBuffer に貯める
+    if (this.batch) return
     let iterations = 0
     while (this.speechBuffer.length > 0 && iterations++ < MAX_ITERATIONS) {
       const { emotionTag, remainingText: afterEmotion } = extractEmotion(
@@ -228,6 +278,57 @@ export class SpeechSegmenter {
         this.speechBuffer = ''
       }
       break
+    }
+  }
+
+  /**
+   * バッチモードのまとめ発話。
+   * タグ除去と文の切り出しは通常経路と同じ関数を使い、結果だけ1本に連結する。
+   */
+  private emitBatchSpeech(events: SegmenterEvent[]) {
+    const parts: string[] = []
+    let iterations = 0
+    while (this.speechBuffer.length > 0 && iterations++ < MAX_ITERATIONS) {
+      const { emotionTag, remainingText: afterEmotion } = extractEmotion(
+        this.speechBuffer
+      )
+      if (emotionTag) {
+        this.emotionTag = emotionTag
+        this.tagExplicitPending = true
+      }
+      const { motionTag, remainingText: afterMotion } =
+        extractMotionTag(afterEmotion)
+      if (motionTag) this.motionTag = motionTag
+
+      const { sentence, remainingText } = extractSentence(afterMotion, {
+        commaMinChars: DEFAULT_COMMA_MIN_CHARS,
+      })
+      if (sentence) {
+        parts.push(sentence)
+        this.speechBuffer = remainingText
+        // 改行を跨いだらタグ持ち越しをリセット（通常経路と同じ）
+        const trimmedGap = afterMotion.slice(
+          sentence.length,
+          afterMotion.length - remainingText.length
+        )
+        if (sentence.endsWith('\n') || trimmedGap.includes('\n')) {
+          this.emotionTag = ''
+          this.motionTag = ''
+        }
+        continue
+      }
+      const tail = afterMotion.trim()
+      if (tail) parts.push(tail)
+      this.speechBuffer = ''
+      break
+    }
+
+    // 改行は読点に置き換える（TTSが不自然に間を置くのを避ける）
+    const spoken = parts.join('').replace(/\n+/g, '。').trim()
+    if (!spoken) return
+
+    for (const chunk of splitForTts(spoken)) {
+      this.emitSpeech(events, chunk)
     }
   }
 
