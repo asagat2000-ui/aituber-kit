@@ -21,9 +21,10 @@ const CHIRP_ENDPOINT = 'https://texttospeech.googleapis.com/v1/text:synthesize'
 const DEFAULT_GEMINI_MODEL = 'gemini-3.8-flash-lite-tts'
 const LANGUAGE_CODE = 'ja-JP'
 
-/** 429 / 5xx のときの再試行回数と待ち時間（指数バックオフ） */
-const MAX_RETRIES = 2
-const BASE_RETRY_DELAY_MS = 700
+/** 429 / 5xx のときの再試行回数と待ち時間 */
+const MAX_RETRIES = 4
+const BASE_RETRY_DELAY_MS = 900
+const MAX_RETRY_DELAY_MS = 8000
 /** 同じ台詞の再合成を避けるキャッシュ（LRU 相当） */
 const CACHE_LIMIT = 300
 const audioCache = new Map<string, Buffer>()
@@ -55,6 +56,18 @@ function getChirpKey(): string {
 }
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+/**
+ * 429 応答から Google 推奨の待ち時間（retryDelay / RetryInfo）を取り出す。
+ * 取れなければ null。値は "3s" / "1.5s" / 3000(ms) のような形で来る。
+ */
+function parseRetryDelayMs(errorText: string): number | null {
+  const quoted = errorText.match(/"retryDelay"\s*:\s*"([0-9.]+)s"/)
+  if (quoted) return Math.round(Number(quoted[1]) * 1000)
+  const bare = errorText.match(/retryDelay"?\s*[:=]\s*"?([0-9.]+)s/)
+  if (bare) return Math.round(Number(bare[1]) * 1000)
+  return null
+}
 
 function isRetryableStatus(status: number): boolean {
   return status === 429 || status === 500 || status === 503 || status === 504
@@ -212,9 +225,19 @@ async function synthesizeWithGemini(
     })
 
     if (!isRetryableStatus(response.status) || attempt === MAX_RETRIES) {
-      throw new Error(`Gemini TTS upstream error: ${response.status}`)
+      throw new Error(
+        `Gemini TTS upstream error: ${response.status} ${errorText.slice(0, 240)}`
+      )
     }
-    await sleep(BASE_RETRY_DELAY_MS * 2 ** attempt)
+
+    // 429 は Google が指定する待ち時間を優先する（体感 1〜2 秒で回復する）
+    const suggested =
+      response.status === 429 ? parseRetryDelayMs(errorText) : null
+    const wait =
+      suggested ??
+      Math.min(BASE_RETRY_DELAY_MS * 2 ** attempt, MAX_RETRY_DELAY_MS)
+    logger.log(`Gemini TTS retry ${attempt + 1}/${MAX_RETRIES} in ${wait}ms`)
+    await sleep(wait)
   }
   throw new Error(`Gemini TTS upstream error: ${lastStatus}`)
 }
@@ -253,7 +276,9 @@ async function synthesizeWithChirp(
       body: errorText.slice(0, 500),
       voice,
     })
-    throw new Error(`Chirp TTS upstream error: ${response.status}`)
+    throw new Error(
+      `Chirp TTS upstream error: ${response.status} ${errorText.slice(0, 240)}`
+    )
   }
 
   const payload = (await response.json()) as { audioContent?: string }
@@ -271,6 +296,36 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
 
   const voices = resolveVoices(voice)
   const style = resolveStyle(emotion)
+
+  // 切り分け用: POST /api/openAITTS?probe=1 で両エンジンの素の応答を返す
+  if (req.query.probe === '1') {
+    const probe: Record<string, unknown> = {
+      model: (process.env.GEMINI_TTS_MODEL || DEFAULT_GEMINI_MODEL).trim(),
+      keys: {
+        gemini: Boolean((process.env.GEMINI_TTS_API_KEY || '').trim()),
+        chirp: Boolean(getChirpKey()),
+      },
+    }
+    try {
+      await synthesizeWithGemini('動作確認です。', voices.gemini, style)
+      probe.gemini = { ok: true }
+    } catch (error) {
+      probe.gemini = {
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+      }
+    }
+    try {
+      await synthesizeWithChirp('動作確認です。', voices.chirp)
+      probe.chirp = { ok: true }
+    } catch (error) {
+      probe.chirp = {
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+      }
+    }
+    return res.status(200).json(probe)
+  }
   const hybridMinChars = Number(process.env.HYBRID_MIN_CHARS || 0)
   const hasChirpKey = !!process.env.GOOGLE_TTS_API_KEY?.trim()
   const requestedModel = (model || '').toString().toLowerCase()
@@ -283,9 +338,14 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
   const cacheKey = `${preferChirp ? 'chirp' : 'gemini'}|${voices.gemini}|${style}|${message}`
   const cached = cacheGet(cacheKey)
 
+  // どのエンジンが応答したかをヘッダで返す（DevTools の Network で確認できる）
+  let engine = preferChirp ? 'chirp' : 'gemini'
+  let fallbackReason: string | null = null
+
   let audio: Buffer
   if (cached) {
     audio = cached
+    engine = 'cache'
   } else {
     try {
       audio = preferChirp
@@ -293,6 +353,8 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
         : await synthesizeWithGemini(message, voices.gemini, style)
     } catch (error) {
       const message1 = error instanceof Error ? error.message : String(error)
+      engine = preferChirp ? 'gemini' : 'chirp'
+      fallbackReason = message1.slice(0, 200)
       logger.warn('TTS failed, trying the other engine:', message1)
       try {
         audio = preferChirp
@@ -316,6 +378,11 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
       }
     }
     cacheSet(cacheKey, audio)
+  }
+
+  res.setHeader('X-TTS-Engine', engine)
+  if (fallbackReason) {
+    res.setHeader('X-TTS-Fallback', encodeURIComponent(fallbackReason))
   }
 
   if (stream) {
