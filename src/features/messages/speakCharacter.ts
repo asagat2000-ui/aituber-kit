@@ -32,10 +32,8 @@ import { markConversationLatency } from '@/features/chat/conversationLatency'
 import { createConcurrencyLimiter } from '@/features/messages/concurrencyLimiter'
 
 const speakQueue = SpeakQueue.getInstance()
-// Gemini TTS は毎分あたりのリクエスト上限が低く、短時間の連投で 429 になる。
-// 合成は再生より速いため、間隔を広げても体感のレイテンシーは増えない。
-const SYNTHESIS_START_GAP_MS = 900
-const MAX_CONCURRENT_SYNTHESIS = 2
+const SYNTHESIS_START_GAP_MS = 250
+const MAX_CONCURRENT_SYNTHESIS = 3
 
 type SynthesizedSpeech =
   | {
