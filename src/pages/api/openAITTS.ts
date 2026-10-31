@@ -15,16 +15,16 @@ import { routePolicies } from '@/lib/accessPolicy/routePolicies'
  *                       GOOGLE_TTS_KEY という名前でも読み込む（既存 env との互換）
  *   HYBRID_MIN_CHARS    N>0 のとき N 文字未満は Chirp3 HD（無料枠）へ
  */
-const GEMINI_ENDPOINT =
+export const GEMINI_ENDPOINT =
   'https://generativelanguage.googleapis.com/v1beta/interactions'
 const CHIRP_ENDPOINT = 'https://texttospeech.googleapis.com/v1/text:synthesize'
-const DEFAULT_GEMINI_MODEL = 'gemini-3.8-flash-lite-tts'
+export const DEFAULT_GEMINI_MODEL = 'gemini-3.8-flash-lite-tts'
 const LANGUAGE_CODE = 'ja-JP'
 
 /** 429 / 5xx のときの再試行回数と待ち時間 */
-const MAX_RETRIES = 4
+const MAX_RETRIES = 3
 const BASE_RETRY_DELAY_MS = 900
-const MAX_RETRY_DELAY_MS = 8000
+const MAX_RETRY_DELAY_MS = 5000
 /** 同じ台詞の再合成を避けるキャッシュ（LRU 相当） */
 const CACHE_LIMIT = 300
 const audioCache = new Map<string, Buffer>()
@@ -47,7 +47,7 @@ function cacheSet(key: string, value: Buffer): void {
 }
 
 /** Chirp3 HD のキー。GOOGLE_TTS_KEY という既存名でも動くようにする */
-function getChirpKey(): string {
+export function getChirpKey(): string {
   return (
     process.env.GOOGLE_TTS_API_KEY ||
     process.env.GOOGLE_TTS_KEY ||
@@ -116,7 +116,10 @@ interface GeminiResponse {
   output_audio?: { data?: string }
 }
 
-function resolveVoices(voice: string): { gemini: string; chirp: string } {
+export function resolveVoices(voice: string): {
+  gemini: string
+  chirp: string
+} {
   const name = (voice || '').trim()
   const mapped = VOICE_MAP[name.toLowerCase()]
   if (mapped) return { gemini: mapped[0], chirp: mapped[1] }
@@ -128,7 +131,7 @@ function resolveVoices(voice: string): { gemini: string; chirp: string } {
   return { gemini: fallback, chirp: fallback }
 }
 
-function resolveStyle(emotion: string | undefined): string {
+export function resolveStyle(emotion: string | undefined): string {
   const fromEnv = process.env.GEMINI_TTS_STYLE?.trim()
   if (fromEnv) return fromEnv
   const key = (emotion || 'neutral').toLowerCase()
@@ -168,7 +171,7 @@ function wavToPcm(buffer: Buffer): Buffer {
   return buffer
 }
 
-async function synthesizeWithGemini(
+export async function synthesizeWithGemini(
   text: string,
   voice: string,
   style: string
@@ -242,7 +245,7 @@ async function synthesizeWithGemini(
   throw new Error(`Gemini TTS upstream error: ${lastStatus}`)
 }
 
-async function synthesizeWithChirp(
+export async function synthesizeWithChirp(
   text: string,
   voice: string
 ): Promise<Buffer> {
