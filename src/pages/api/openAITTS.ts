@@ -174,7 +174,10 @@ async function synthesizeWithChirp(
 
   const body = {
     input: { text },
-    voice: { languageCode: LANGUAGE_CODE, name: `${LANGUAGE_CODE}-Chirp3-HD-${voice}` },
+    voice: {
+      languageCode: LANGUAGE_CODE,
+      name: `${LANGUAGE_CODE}-Chirp3-HD-${voice}`,
+    },
     audioConfig: { audioEncoding: 'LINEAR16' },
   }
 
@@ -219,9 +222,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
   // 明示的に chirp が選ばれた場合を除き、既定は Gemini
   const preferChirp =
     requestedModel.startsWith('chirp') ||
-    (hybridMinChars > 0 &&
-      hasChirpKey &&
-      message.length < hybridMinChars)
+    (hybridMinChars > 0 && hasChirpKey && message.length < hybridMinChars)
 
   let audio: Buffer
   try {
