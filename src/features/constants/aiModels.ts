@@ -818,6 +818,9 @@ export const openAITTSModels = [
   'gpt-4o-mini-tts',
   'gpt-4o-mini-tts-2025-03-20',
   'gpt-4o-mini-tts-2025-12-15',
+  'gemini-3.8-flash-lite-tts',
+  'gemini-3.8-flash-tts',
+  'chirp3-hd',
 ] as const
 
 /**
