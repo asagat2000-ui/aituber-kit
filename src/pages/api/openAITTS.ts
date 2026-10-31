@@ -19,7 +19,7 @@ export const GEMINI_ENDPOINT =
   'https://generativelanguage.googleapis.com/v1beta/interactions'
 const CHIRP_ENDPOINT = 'https://texttospeech.googleapis.com/v1/text:synthesize'
 /** デプロイ確認用。診断ページに出るので、反映されたかが一目で分かる */
-export const KIT_PATCH_VERSION = 'p11'
+export const KIT_PATCH_VERSION = 'p12'
 
 /** 実際に送るモデル名。環境変数も定数も参照しない直値。ここが唯一の正 */
 const SENT_MODEL = 'gemini-3.8-flash-lite-tts'
@@ -405,13 +405,30 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
     return res.status(200).json(probe)
   }
   const hybridMinChars = Number(process.env.HYBRID_MIN_CHARS || 0)
-  const hasChirpKey = !!process.env.GOOGLE_TTS_API_KEY?.trim()
+  // 以前は GOOGLE_TTS_API_KEY しか見ておらず、GOOGLE_TTS_KEY 運用時に
+  // 「Chirpのキーが無い」と誤判定していた。getChirpKey() に統一する。
+  const hasChirpKey = !!getChirpKey()
   const requestedModel = (model || '').toString().toLowerCase()
 
-  // 明示的に chirp が選ばれた場合を除き、既定は Gemini
-  const preferChirp =
-    requestedModel.startsWith('chirp') ||
-    (hybridMinChars > 0 && hasChirpKey && message.length < hybridMinChars)
+  // 既定は Chirp 3 HD。
+  // Gemini TTS は Tier 1 でも 1日100リクエストの上限があり、
+  // 1返答で5〜7回呼ぶこのアプリでは1日15往復ほどで尽きてしまうため。
+  const primary = (process.env.TTS_PRIMARY || 'chirp').trim().toLowerCase()
+
+  let preferChirp: boolean
+  if (requestedModel.startsWith('gemini')) {
+    preferChirp = false
+  } else if (requestedModel.startsWith('chirp')) {
+    preferChirp = true
+  } else if (primary === 'gemini') {
+    preferChirp = false
+  } else if (primary === 'auto') {
+    // 旧来のハイブリッド動作（短い文だけ Chirp）
+    preferChirp =
+      hasChirpKey && (hybridMinChars === 0 || message.length < hybridMinChars)
+  } else {
+    preferChirp = hasChirpKey
+  }
 
   const cacheKey = `${preferChirp ? 'chirp' : 'gemini'}|${voices.gemini}|${style}|${message}`
   const cached = cacheGet(cacheKey)
