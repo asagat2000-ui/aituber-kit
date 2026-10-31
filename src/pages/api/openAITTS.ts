@@ -18,7 +18,9 @@ import { routePolicies } from '@/lib/accessPolicy/routePolicies'
 export const GEMINI_ENDPOINT =
   'https://generativelanguage.googleapis.com/v1beta/interactions'
 const CHIRP_ENDPOINT = 'https://texttospeech.googleapis.com/v1/text:synthesize'
-export const DEFAULT_GEMINI_MODEL = 'gemini-3.8-flash-lite-tts'
+/** 使うモデルの唯一の正。他の定数や環境変数に引きずられないよう直値で持つ */
+export const PREFERRED_GEMINI_TTS_MODEL = 'gemini-3.8-flash-lite-tts'
+export const DEFAULT_GEMINI_MODEL = PREFERRED_GEMINI_TTS_MODEL
 const LANGUAGE_CODE = 'ja-JP'
 
 /** 429 / 5xx のときの再試行回数と待ち時間 */
@@ -42,12 +44,17 @@ const LEGACY_MODEL_PATTERN = /gemini-(1\.|2\.|3\.[0-7])/
  */
 export function resolveModel(): { model: string; ignored: string | null } {
   const fromEnv = (process.env.GEMINI_TTS_MODEL || '').trim()
-  if (!fromEnv) return { model: DEFAULT_GEMINI_MODEL, ignored: null }
+  if (!fromEnv) return { model: PREFERRED_GEMINI_TTS_MODEL, ignored: null }
   if (LEGACY_MODEL_PATTERN.test(fromEnv.toLowerCase())) {
-    return { model: DEFAULT_GEMINI_MODEL, ignored: fromEnv }
+    return { model: PREFERRED_GEMINI_TTS_MODEL, ignored: fromEnv }
+  }
+  // 3.8 系以外（将来の未知の名前も含む）は、上限の厳しい旧世代の可能性があるため既定に寄せる
+  if (!/^gemini-3\.(8|[9]|\d{2,})/.test(fromEnv.toLowerCase())) {
+    return { model: PREFERRED_GEMINI_TTS_MODEL, ignored: fromEnv }
   }
   return { model: fromEnv, ignored: null }
 }
+
 /** 同じ台詞の再合成を避けるキャッシュ（LRU 相当） */
 const CACHE_LIMIT = 300
 const audioCache = new Map<string, Buffer>()
