@@ -19,11 +19,19 @@ export const GEMINI_ENDPOINT =
   'https://generativelanguage.googleapis.com/v1beta/interactions'
 const CHIRP_ENDPOINT = 'https://texttospeech.googleapis.com/v1/text:synthesize'
 /** デプロイ確認用。診断ページに出るので、反映されたかが一目で分かる */
-export const KIT_PATCH_VERSION = 'p10'
+export const KIT_PATCH_VERSION = 'p11'
+
+/** 実際に送るモデル名。環境変数も定数も参照しない直値。ここが唯一の正 */
+const SENT_MODEL = 'gemini-3.8-flash-lite-tts'
 
 /** 使うモデルの唯一の正。他の定数や環境変数に引きずられないよう直値で持つ */
-export const PREFERRED_GEMINI_TTS_MODEL = 'gemini-3.8-flash-lite-tts'
-export const DEFAULT_GEMINI_MODEL = PREFERRED_GEMINI_TTS_MODEL
+export const PREFERRED_GEMINI_TTS_MODEL = SENT_MODEL
+export const DEFAULT_GEMINI_MODEL = SENT_MODEL
+
+/** 実際に本文へ入れるモデル名を返す（診断ページ用） */
+export function getSentModel(): string {
+  return SENT_MODEL
+}
 const LANGUAGE_CODE = 'ja-JP'
 
 /** 429 / 5xx のときの再試行回数と待ち時間 */
@@ -224,7 +232,10 @@ export async function synthesizeWithGemini(
   if (Date.now() < geminiCooldownUntil) {
     throw new Error('Gemini TTS is cooling down after a quota error')
   }
-  const { model, ignored } = resolveModel()
+  // 本文に入れるのは SENT_MODEL のみ。env や他定数は一切使わない。
+  const model = SENT_MODEL
+  const resolved = resolveModel()
+  const ignored = resolved.ignored
   if (ignored) {
     logger.warn('GEMINI_TTS_MODEL is outdated; using the default instead', {
       ignored,
