@@ -1,8 +1,8 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 import {
-  DEFAULT_GEMINI_MODEL,
   GEMINI_ENDPOINT,
   getChirpKey,
+  resolveModel,
   resolveStyle,
   resolveVoices,
   synthesizeWithChirp,
@@ -99,7 +99,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
   const voices = resolveVoices(voice)
   const style = resolveStyle(undefined)
   const envModel = (process.env.GEMINI_TTS_MODEL || '').trim()
-  const model = envModel || DEFAULT_GEMINI_MODEL
+  const { model, ignored } = resolveModel()
 
   const checks: Check[] = []
 
@@ -194,7 +194,10 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
 
   const env = [
     ['GEMINI_TTS_MODEL（env）', envModel || '未設定（既定値を使用）'],
-    ['実際に使うモデル', model],
+    [
+      '実際に使うモデル',
+      ignored ? `${model}（env の ${ignored} は旧世代のため無視）` : model,
+    ],
     ['GEMINI_TTS_STYLE', process.env.GEMINI_TTS_STYLE || '未設定'],
     ['HYBRID_MIN_CHARS', process.env.HYBRID_MIN_CHARS || '未設定'],
     ['GEMINI_TTS_API_KEY', mask(process.env.GEMINI_TTS_API_KEY)],
