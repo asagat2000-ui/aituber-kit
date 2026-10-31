@@ -18,6 +18,9 @@ import { routePolicies } from '@/lib/accessPolicy/routePolicies'
 export const GEMINI_ENDPOINT =
   'https://generativelanguage.googleapis.com/v1beta/interactions'
 const CHIRP_ENDPOINT = 'https://texttospeech.googleapis.com/v1/text:synthesize'
+/** デプロイ確認用。診断ページに出るので、反映されたかが一目で分かる */
+export const KIT_PATCH_VERSION = 'p10'
+
 /** 使うモデルの唯一の正。他の定数や環境変数に引きずられないよう直値で持つ */
 export const PREFERRED_GEMINI_TTS_MODEL = 'gemini-3.8-flash-lite-tts'
 export const DEFAULT_GEMINI_MODEL = PREFERRED_GEMINI_TTS_MODEL
