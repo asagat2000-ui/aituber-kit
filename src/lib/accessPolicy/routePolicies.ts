@@ -308,22 +308,15 @@ export const routePolicies = {
     restrictedBehavior: 'none',
   },
 
+  // 診断ページはブラウザで開く（GET）ため GET を許可する。
+  // 以前 POST のみで登録していたため、開くと 405 Method not allowed になっていた。
+  // キーは末尾4文字と文字数のみの表示なので秘密情報は扱わない（secret: none）。
   '/api/tts-diag': {
-    demoBehavior: 'deny',
     path: '/api/tts-diag',
     featureName: 'openAITTS',
-    methods: ['POST'],
-    resources: ['server-secret'],
-    secret: {
-      kind: 'pairs',
-      pairs: [
-        {
-          source: 'body',
-          key: 'apiKey',
-          envVars: ['OPENAI_TTS_KEY', 'OPENAI_API_KEY'],
-        },
-      ],
-    },
+    methods: ['GET'],
+    resources: [],
+    secret: { kind: 'none' },
     restrictedBehavior: 'none',
   },
   '/api/save-chat-log': {
