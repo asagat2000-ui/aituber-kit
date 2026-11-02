@@ -156,13 +156,14 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
   })
 
   // 3) Chirp
+  const chirpStarted = Date.now()
   try {
     const buf = await synthesizeWithChirp('動作確認です。', voices.chirp)
     checks.push({
       name: 'Chirp 3 HD',
       ok: true,
       status: 200,
-      ms: 0,
+      ms: Date.now() - chirpStarted,
       bytes: buf.length,
       detail: '音声が返りました',
     })
@@ -209,8 +210,8 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
   const env = [
     ['KIT_PATCH_VERSION', KIT_PATCH_VERSION],
     [
-      'TTS_PRIMARY（既定 chirp）',
-      (process.env.TTS_PRIMARY || '未設定 → chirp').toString(),
+      'TTS_PRIMARY（既定 gemini）',
+      (process.env.TTS_PRIMARY || '未設定 → gemini').toString(),
     ],
     ['送信モデル（openAITTSの直値）', getSentModel()],
     ['診断ページの直値', LOCAL_LITERAL],
