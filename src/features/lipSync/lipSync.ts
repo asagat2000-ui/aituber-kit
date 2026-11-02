@@ -1,5 +1,6 @@
 import { logger } from '@/lib/logger'
 import { LipSyncAnalyzeResult } from './lipSyncAnalyzeResult'
+import { registerAudioContext } from './audioUnlock'
 
 const TIME_DOMAIN_DATA_LENGTH = 2048
 
@@ -16,7 +17,7 @@ const RESUME_TIMEOUT_MS = 150
 const PLAYBACK_GIVEUP_MS = 15000
 
 export class LipSync {
-  public readonly audio: AudioContext
+  public audio: AudioContext
   public readonly analyser: AnalyserNode
   public readonly timeDomainData: Float32Array
   private userInteracted: boolean = false
@@ -49,7 +50,31 @@ export class LipSync {
     }
 
     this.audio.onstatechange = () => this.updateBanner()
+    registerAudioContext({
+      get: () => this.audio,
+      recreate: () => this.recreateAudioContext(),
+    })
     this.updateBanner()
+  }
+
+  /**
+   * close 済みの Context を作り直す。
+   * iOS では close した Context は復帰できないため、作り直すしかない。
+   */
+  private recreateAudioContext(): void {
+    try {
+      this.stopCurrentPlayback()
+    } catch {
+      // 停止できなくても作り直しは続行する
+    }
+    try {
+      this.audio = new AudioContext()
+      this.audio.onstatechange = () => this.updateBanner()
+      void this.tryResumeAudio()
+      logger.log('AudioContext recreated:', this.audio.state)
+    } catch (error) {
+      logger.error('Failed to recreate AudioContext:', error)
+    }
   }
 
   /** 現在の AudioContext の状態（診断用） */
@@ -101,7 +126,10 @@ export class LipSync {
     }
     if (this.unlockBanner) return
     const el = document.createElement('div')
-    el.textContent = '音が止まっています。画面をタップしてください'
+    const rate = this.audio.sampleRate
+    el.textContent =
+      `音が止まっています。画面をタップしてください` +
+      `（${this.audio.state} / ${rate}Hz）`
     el.style.cssText = [
       'position:fixed',
       'left:50%',
@@ -128,6 +156,9 @@ export class LipSync {
    * iOS は操作なしだと resume() が解決しないため、必ずタイムアウトを挟む。
    */
   private async tryResumeAudio(): Promise<boolean> {
+    if (this.audio.state === 'closed') {
+      this.recreateAudioContext()
+    }
     if (this.getAudioState() === 'running') return true
 
     let resumed = false

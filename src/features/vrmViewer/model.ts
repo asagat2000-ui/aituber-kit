@@ -10,6 +10,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { VRMAnimation } from '../../lib/VRMAnimation/VRMAnimation'
 import { VRMLookAtSmootherLoaderPlugin } from '@/lib/VRMLookAtSmootherLoaderPlugin/VRMLookAtSmootherLoaderPlugin'
 import { LipSync } from '../lipSync/lipSync'
+import { getSharedAudioContext } from '../lipSync/audioUnlock'
 import { EmoteController } from '../emoteController/emoteController'
 import { Talk } from '../messages/messages'
 import { PoseManager } from '@/lib/VRMAnimation/poseManager'
@@ -34,7 +35,7 @@ export class Model {
 
   constructor(lookAtTargetParent: THREE.Object3D) {
     this._lookAtTargetParent = lookAtTargetParent
-    this._lipSync = new LipSync(new AudioContext(), { forceStart: true })
+    this._lipSync = new LipSync(getSharedAudioContext(), { forceStart: true })
     this.poseManager = new PoseManager()
   }
 

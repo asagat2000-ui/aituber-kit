@@ -4,6 +4,7 @@
  */
 
 import { logger } from '@/lib/logger'
+import { getSharedAudioContext } from '@/features/lipSync/audioUnlock'
 import {
   MouthState,
   MouthTrackData,
@@ -38,6 +39,7 @@ export class PNGTuberEngine implements IPNGTuberEngine {
 
   // 音声関連
   private audioContext: AudioContext | null = null
+  private audioUnlockRegistered = false
   private audioWorkletReady: Promise<void> | null = null
   private workletNode: AudioWorkletNode | null = null
   private currentSource: AudioBufferSourceNode | null = null
@@ -200,7 +202,7 @@ export class PNGTuberEngine implements IPNGTuberEngine {
       return
     }
 
-    this.audioContext = new AudioContext()
+    this.audioContext = getSharedAudioContext()
 
     // AudioWorkletを登録
     if (this.audioContext.audioWorklet) {
@@ -264,6 +266,10 @@ export class PNGTuberEngine implements IPNGTuberEngine {
       throw new Error('AudioContext not initialized')
     }
 
+    // close 済みなら作り直す（復帰は不可能なため）
+    if (this.audioContext.state === 'closed') {
+      this.audioContext = getSharedAudioContext()
+    }
     // AudioContextがsuspended状態の場合はresumeする
     if (this.audioContext.state === 'suspended') {
       logger.log('[PNGTuber] AudioContext is suspended, resuming...')
@@ -943,11 +949,9 @@ export class PNGTuberEngine implements IPNGTuberEngine {
     this.stop()
     this.stopAudio()
 
-    if (this.audioContext) {
-      this.audioContext.close().catch(() => {})
-      this.audioContext = null
-      this.audioWorkletReady = null
-    }
+    // 共有 AudioContext は閉じない（閉じると他の描画側も二度と鳴らせなくなる）
+    this.audioContext = null
+    this.audioWorkletReady = null
 
     if (this.resizeObserver) {
       this.resizeObserver.disconnect()
