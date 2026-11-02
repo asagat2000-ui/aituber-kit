@@ -23,7 +23,7 @@ const PLAYBACK_GIVEUP_MS = 15000
 
 export class LipSync {
   public audio: AudioContext
-  public readonly analyser: AnalyserNode
+  private _analyser: AnalyserNode
   public readonly timeDomainData: Float32Array
   private userInteracted: boolean = false
   private waitingForInteraction: boolean = false
@@ -39,7 +39,7 @@ export class LipSync {
 
   public constructor(audio: AudioContext, options?: { forceStart?: boolean }) {
     this.audio = audio
-    this.analyser = audio.createAnalyser()
+    this._analyser = audio.createAnalyser()
     this.timeDomainData = new Float32Array(TIME_DOMAIN_DATA_LENGTH)
     this.forceStart = options?.forceStart || false
 
@@ -81,6 +81,36 @@ export class LipSync {
       logger.log('AudioContext recreated:', this.audio.state)
     } catch (error) {
       logger.error('Failed to recreate AudioContext:', error)
+    }
+  }
+
+  /**
+   * 解析ノード。AudioContext が差し替わったら必ず作り直す。
+   * 別 Context のノード同士は connect() できず、例外で再生ごと落ちるため。
+   */
+  public get analyser(): AnalyserNode {
+    if (this._analyser.context !== this.audio) {
+      logger.log('Analyser belongs to an old AudioContext; rebuilding')
+      this._analyser = this.audio.createAnalyser()
+    }
+    return this._analyser
+  }
+
+  /**
+   * 解析ノードへの接続。リップシンクが失敗しても音は出す。
+   * （ここで例外が出ると source.start() に到達せず無音になる）
+   */
+  private connectAnalyser(source: AudioNode): void {
+    try {
+      source.connect(this.analyser)
+    } catch (error) {
+      logger.warn('Failed to connect analyser; audio continues:', error)
+      try {
+        this._analyser = this.audio.createAnalyser()
+        source.connect(this._analyser)
+      } catch (retryError) {
+        logger.warn('Analyser rebuild failed; lip sync disabled:', retryError)
+      }
     }
   }
 
@@ -367,7 +397,7 @@ export class LipSync {
       bufferSource.buffer = audioBuffer
 
       bufferSource.connect(this.audio.destination)
-      bufferSource.connect(this.analyser)
+      this.connectAnalyser(bufferSource)
       bufferSource.start()
       onStarted?.()
       if (onEnded) {
@@ -495,7 +525,7 @@ export class LipSync {
       const source = this.audio.createBufferSource()
       source.buffer = audioBuffer
       source.connect(this.audio.destination)
-      source.connect(this.analyser)
+      this.connectAnalyser(source)
       this.currentStreamSources.add(source)
 
       const sourceEnded = new Promise<void>((resolve) => {

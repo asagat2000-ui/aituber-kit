@@ -107,14 +107,68 @@ function recoverInGesture(): void {
   }, 120)
 }
 
+/** テスト音を直接 destination に鳴らす（LipSync を経由しない） */
+export function playTestTone(): void {
+  try {
+    const ctx = getSharedAudioContext()
+    void ctx.resume().catch(() => {})
+    const osc = ctx.createOscillator()
+    const gain = ctx.createGain()
+    osc.type = 'sine'
+    osc.frequency.value = 440
+    gain.gain.value = 0.25
+    osc.connect(gain)
+    gain.connect(ctx.destination)
+    osc.start()
+    osc.stop(ctx.currentTime + 0.9)
+    logger.log('test tone played', ctx.state, ctx.sampleRate)
+  } catch (error) {
+    logger.warn('Failed to play test tone:', error)
+  }
+}
+
+/** 画面左下に「テスト音」ボタンを出す（診断用） */
+export function installTestToneButton(): void {
+  if (typeof window === 'undefined' || typeof document === 'undefined') return
+  if (process.env.NODE_ENV === 'test') return
+  if (document.getElementById('audio-test-tone')) return
+  const btn = document.createElement('button')
+  btn.id = 'audio-test-tone'
+  btn.type = 'button'
+  btn.textContent = 'テスト音'
+  btn.style.cssText = [
+    'position:fixed',
+    'left:8px',
+    'bottom:8px',
+    'z-index:2147483647',
+    'padding:10px 16px',
+    'border-radius:9999px',
+    'border:1px solid rgba(255,255,255,0.4)',
+    'background:rgba(0,0,0,0.65)',
+    'color:#fff',
+    'font-size:14px',
+    'font-family:sans-serif',
+    'cursor:pointer',
+  ].join(';')
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation()
+    playTestTone()
+  })
+  document.body.appendChild(btn)
+}
+
 /** タップ・クリックのたびに復帰を試す（一度きりにしない） */
 export function attachGestureListeners(): void {
   if (attached || typeof window === 'undefined') return
   attached = true
 
+  installTestToneButton()
+
   const events = ['pointerdown', 'touchstart', 'click', 'keydown']
   const handler = () => {
     gestureCount++
+    // テスト環境など AudioContext が無い場所では何もしない
+    if (typeof AudioContext === 'undefined') return
     unlockSession()
     recoverInGesture()
   }
