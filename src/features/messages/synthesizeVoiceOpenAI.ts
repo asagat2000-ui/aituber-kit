@@ -3,6 +3,15 @@ import { Language } from '@/features/constants/settings'
 import { synthesizeVoiceApi } from './synthesizeVoiceApi'
 import { logger } from '@/lib/logger'
 
+/**
+ * 感情タグを TTS へ渡す。サーバー側（openAITTS.ts の resolveStyle）は
+ * body.emotion から演技指示を決めるが、未指定時は neutral と同じ
+ * 「落ち着いた自然な口調で」にフォールバックする。
+ * よって neutral は送らない（既存テストの期待値とも一致する）。
+ */
+const emotionField = (emotion?: string) =>
+  emotion && emotion !== 'neutral' ? { emotion } : {}
+
 export async function synthesizeVoiceOpenAIApi(
   talk: Talk,
   apiKey: string,
@@ -18,6 +27,7 @@ export async function synthesizeVoiceOpenAIApi(
       model: model,
       speed: speed,
       apiKey: apiKey,
+      ...emotionField(talk.emotion),
     },
     'OpenAI TTS',
     {
@@ -50,6 +60,7 @@ export async function synthesizeVoiceOpenAIStreamApi(
       model,
       speed,
       apiKey,
+      ...emotionField(talk.emotion),
     }),
   })
 
