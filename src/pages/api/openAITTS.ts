@@ -21,10 +21,49 @@ export const GEMINI_ENDPOINT =
   'https://generativelanguage.googleapis.com/v1beta/interactions'
 const CHIRP_ENDPOINT = 'https://texttospeech.googleapis.com/v1/text:synthesize'
 /** デプロイ確認用。診断ページに出るので、反映されたかが一目で分かる */
-export const KIT_PATCH_VERSION = 'p14'
+export const KIT_PATCH_VERSION = 'p22'
 
 /** 実際に送るモデル名。環境変数も定数も参照しない直値。ここが唯一の正 */
 const SENT_MODEL = 'gemini-3.8-flash-lite-tts'
+
+/** Gemini TTS の上位モデル（1日100回） */
+export const GEMINI_FLASH_TTS = 'gemini-3.8-flash-tts'
+/** Gemini TTS の軽量モデル（1日100回）。上限に当たったときの受け皿でもある */
+export const GEMINI_FLASH_LITE_TTS = 'gemini-3.8-flash-lite-tts'
+
+/**
+ * 使うモデルの順番。
+ *  - Flash を選んだ場合: Flash → Flash Lite（→ さらに Chirp3 HD へ）
+ *  - Lite を選んだ場合:  Lite（→ Chirp3 HD へ）
+ * どちらも 1日100回で尽きるので、尽きたら次の受け皿に送る。
+ */
+export function buildGeminiModelChain(requested: string): string[] {
+  const name = (requested || '').toLowerCase()
+  if (name.includes('flash-lite')) return [GEMINI_FLASH_LITE_TTS]
+  if (name.includes('flash')) return [GEMINI_FLASH_TTS, GEMINI_FLASH_LITE_TTS]
+  return [GEMINI_FLASH_LITE_TTS]
+}
+
+/** どのモデルで鳴ったかをヘッダで返すための短い名前 */
+export function geminiEngineLabel(model: string): string {
+  return model === GEMINI_FLASH_TTS ? 'gemini-flash' : 'gemini'
+}
+
+/** 未知の名前は軽量モデルに寄せる（上限の厳しい旧世代を避ける） */
+export function normalizeGeminiModel(model: string): string {
+  const name = (model || '').toLowerCase()
+  if (name.includes('flash-lite')) return GEMINI_FLASH_LITE_TTS
+  if (name.includes('flash')) return GEMINI_FLASH_TTS
+  return GEMINI_FLASH_LITE_TTS
+}
+
+/** 1日の上限に当たったことを表すエラー。次の受け皿へ進む合図に使う */
+export class GeminiQuotaError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'GeminiQuotaError'
+  }
+}
 
 /** 使うモデルの唯一の正。他の定数や環境変数に引きずられないよう直値で持つ */
 export const PREFERRED_GEMINI_TTS_MODEL = SENT_MODEL
@@ -51,11 +90,17 @@ const MAX_RETRY_DELAY_MS = 5000
 const DAILY_QUOTA_COOLDOWN_MS = 10 * 60 * 1000
 /** 回復時刻が読めないときに待つ上限。これ以上は待たない */
 const MAX_COOLDOWN_MS = 24 * 60 * 60 * 1000
-let geminiCooldownUntil = 0
+/** モデルごとのクールダウン期限。Flash が尽きても Lite は使える */
+const cooldownUntilByModel: Record<string, number> = {}
 
-/** 診断ページ用: Gemini のクールダウン残り(ms)。0 なら使用可 */
+/** そのモデルのクールダウン残り(ms)。0 なら使用可 */
+export function getModelCooldownRemainingMs(model: string): number {
+  return Math.max(0, (cooldownUntilByModel[model] || 0) - Date.now())
+}
+
+/** 診断ページ用: 既定モデルのクールダウン残り(ms) */
 export function getGeminiCooldownRemainingMs(): number {
-  return Math.max(0, geminiCooldownUntil - Date.now())
+  return getModelCooldownRemainingMs(SENT_MODEL)
 }
 
 /** 診断ページ用: 実際に使われるプライマリ（env 優先） */
@@ -66,7 +111,9 @@ export function getPrimaryEngine(): string {
 
 /** テスト用: クールダウンを解除する */
 export function resetGeminiCooldown(): void {
-  geminiCooldownUntil = 0
+  Object.keys(cooldownUntilByModel).forEach((key) => {
+    delete cooldownUntilByModel[key]
+  })
 }
 
 /** 旧世代（1.x / 2.x / 3.0〜3.7）は 1日100回などの厳しい上限を持つので使わない */
@@ -264,15 +311,20 @@ function wavToPcm(buffer: Buffer): Buffer {
 export async function synthesizeWithGemini(
   text: string,
   voice: string,
-  style: string
+  style: string,
+  requestedModel?: string
 ): Promise<Buffer> {
   const apiKey = (process.env.GEMINI_TTS_API_KEY || '').trim()
   if (!apiKey) throw new Error('GEMINI_TTS_API_KEY is not set')
-  if (Date.now() < geminiCooldownUntil) {
-    throw new Error('Gemini TTS is cooling down after a quota error')
+  // 選ばれたモデルをそのまま使う（未指定なら従来どおり既定モデル）
+  const model = requestedModel
+    ? normalizeGeminiModel(requestedModel)
+    : SENT_MODEL
+  if (getModelCooldownRemainingMs(model) > 0) {
+    throw new GeminiQuotaError(
+      `Gemini TTS (${model}) is cooling down after a quota error`
+    )
   }
-  // 本文に入れるのは SENT_MODEL のみ。env や他定数は一切使わない。
-  const model = SENT_MODEL
   const resolved = resolveModel()
   const ignored = resolved.ignored
   if (ignored) {
@@ -346,12 +398,13 @@ export async function synthesizeWithGemini(
         recoverIn && recoverIn > 0
           ? Math.min(recoverIn + 1000, MAX_COOLDOWN_MS)
           : DAILY_QUOTA_COOLDOWN_MS
-      geminiCooldownUntil = Date.now() + cooldown
-      logger.warn('Gemini TTS: quota reached, switching to Chirp', {
+      cooldownUntilByModel[model] = Date.now() + cooldown
+      logger.warn('Gemini TTS: daily quota reached for this model', {
+        model,
         cooldownSec: Math.round(cooldown / 1000),
       })
-      throw new Error(
-        `Gemini TTS daily quota exceeded: ${errorText.slice(0, 240)}`
+      throw new GeminiQuotaError(
+        `Gemini TTS daily quota exceeded (${model}): ${errorText.slice(0, 200)}`
       )
     }
 
@@ -479,7 +532,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
     preferChirp = hasChirpKey
   }
 
-  const cacheKey = `${preferChirp ? 'chirp' : 'gemini'}|${voices.gemini}|${style}|${message}`
+  const cacheKey = `${preferChirp ? 'chirp' : `gemini:${requestedModel}`}|${voices.gemini}|${style}|${message}`
   const cached = cacheGet(cacheKey)
 
   // どのエンジンが応答したかをヘッダで返す（DevTools の Network で確認できる）
@@ -491,36 +544,65 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
     audio = cached
     engine = 'cache'
   } else {
-    try {
-      audio = preferChirp
-        ? await synthesizeWithChirp(message, voices.chirp)
-        : await synthesizeWithGemini(message, voices.gemini, style)
-    } catch (error) {
-      const message1 = error instanceof Error ? error.message : String(error)
-      engine = preferChirp ? 'gemini' : 'chirp'
-      fallbackReason = message1.slice(0, 200)
-      logger.warn('TTS failed, trying the other engine:', message1)
+    // Flash を選んでいれば Flash → Flash Lite、Lite なら Lite のみ。
+    // どのモデルも 1日100回で尽きるので、尽きたら次の受け皿へ送る。
+    const chain = buildGeminiModelChain(requestedModel)
+    const errors: string[] = []
+
+    const runGemini = async (): Promise<Buffer | null> => {
+      for (const target of chain) {
+        try {
+          const buf = await synthesizeWithGemini(
+            message,
+            voices.gemini,
+            style,
+            target
+          )
+          engine = geminiEngineLabel(target)
+          return buf
+        } catch (error) {
+          const reason = error instanceof Error ? error.message : String(error)
+          errors.push(reason)
+          logger.warn('Gemini TTS failed; trying the next model:', {
+            target,
+            reason: reason.slice(0, 200),
+          })
+        }
+      }
+      return null
+    }
+
+    const runChirp = async (): Promise<Buffer | null> => {
       try {
-        audio = preferChirp
-          ? await synthesizeWithGemini(message, voices.gemini, style)
-          : await synthesizeWithChirp(message, voices.chirp)
-      } catch (fallbackError) {
-        const message2 =
-          fallbackError instanceof Error
-            ? fallbackError.message
-            : String(fallbackError)
-        logger.error('Both TTS engines failed:', { message1, message2 })
-        return res.status(500).json({
-          error: 'Failed to generate speech',
-          errorCode: 'TTSError',
-          // 原因の切り分け用（秘密情報は含まない）
-          detail: `${message1} / ${message2}`,
-          hint: getChirpKey()
-            ? undefined
-            : 'GOOGLE_TTS_API_KEY が未設定のためフォールバックが使えません',
-        })
+        const buf = await synthesizeWithChirp(message, voices.chirp)
+        engine = 'chirp'
+        return buf
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error)
+        errors.push(reason)
+        logger.warn('Chirp TTS failed:', reason.slice(0, 200))
+        return null
       }
     }
+
+    let result = preferChirp ? await runChirp() : await runGemini()
+    if (!result) {
+      result = preferChirp ? await runGemini() : await runChirp()
+    }
+    if (!result) {
+      logger.error('Both TTS engines failed:', errors)
+      return res.status(500).json({
+        error: 'Failed to generate speech',
+        errorCode: 'TTSError',
+        // 原因の切り分け用（秘密情報は含まない）
+        detail: errors.join(' / ').slice(0, 400),
+        hint: getChirpKey()
+          ? undefined
+          : 'GOOGLE_TTS_API_KEY が未設定のためフォールバックが使えません',
+      })
+    }
+    audio = result
+    if (errors.length > 0) fallbackReason = errors[0].slice(0, 200)
     cacheSet(cacheKey, audio)
   }
 
