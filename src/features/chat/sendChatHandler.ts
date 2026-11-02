@@ -248,6 +248,17 @@ export const handleSendChatFn =
           '感情タグと併用可能です。例: [happy][motion:cheer]やったー！'
       }
 
+      // 音声で聞く前提のため、返答の長さを抑える。
+      // 1文＝TTS1リクエストなので、文数を減らすことはそのまま課金と待ち時間の削減になる。
+      const replySentenceLimit = Number(ss.maxReplySentences || 0)
+      if (replySentenceLimit > 0 && !ss.slideMode) {
+        systemPrompt +=
+          `\n\n【話し方】返答は${replySentenceLimit}文以内にしてください。` +
+          '短く、やさしい言葉で、聞いて分かる言い方にしてください。' +
+          '箇条書きや記号は使わず、普通の話し言葉で答えてください。' +
+          '長い説明が必要なときも、まず短く答えてください。'
+      }
+
       // IndexedDBから関連する過去の記憶を検索してsystemPromptに追加
       const memoryContext = await searchMemoryContext(newMessage)
       if (memoryContext) {

@@ -278,6 +278,8 @@ interface General {
   hideVideoDisplay: boolean
   temperature: number
   maxTokens: number
+  /** 返答の文数上限（0で無効）。TTSの呼び出し回数＝課金に直結する */
+  maxReplySentences: number
   reasoningMode: boolean
   reasoningEffort: ReasoningEffort
   reasoningTokenBudget: number
@@ -654,6 +656,10 @@ const getInitialValuesFromEnv = (): SettingsState => ({
   hideVideoDisplay: process.env.NEXT_PUBLIC_HIDE_VIDEO_DISPLAY === 'true',
   temperature: parseFloat(process.env.NEXT_PUBLIC_TEMPERATURE || '1.0') || 1.0,
   maxTokens: parseInt(process.env.NEXT_PUBLIC_MAX_TOKENS || '4096') || 4096,
+  maxReplySentences:
+    process.env.NEXT_PUBLIC_MAX_REPLY_SENTENCES !== undefined
+      ? parseInt(process.env.NEXT_PUBLIC_MAX_REPLY_SENTENCES) || 0
+      : 3,
   reasoningMode: process.env.NEXT_PUBLIC_REASONING_MODE === 'true',
   reasoningEffort:
     (process.env.NEXT_PUBLIC_REASONING_EFFORT as ReasoningEffort) || 'medium',
@@ -1307,6 +1313,7 @@ export const selectPersistedSettings = (state: SettingsState) => ({
   showQuickMenu: state.showQuickMenu,
   temperature: state.temperature,
   maxTokens: state.maxTokens,
+  maxReplySentences: state.maxReplySentences,
   reasoningMode: state.reasoningMode,
   reasoningEffort: state.reasoningEffort,
   reasoningTokenBudget: state.reasoningTokenBudget,
