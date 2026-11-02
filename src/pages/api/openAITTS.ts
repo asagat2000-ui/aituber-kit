@@ -14,12 +14,14 @@ import { routePolicies } from '@/lib/accessPolicy/routePolicies'
  *   GOOGLE_TTS_API_KEY  Chirp3 HD 用キー（任意 / ハイブリッド・フォールバック用）
  *                       GOOGLE_TTS_KEY という名前でも読み込む（既存 env との互換）
  *   HYBRID_MIN_CHARS    N>0 のとき N 文字未満は Chirp3 HD（無料枠）へ
+ *   TTS_PRIMARY         'gemini'（既定）| 'chirp' | 'auto'
+ *                       gemini 指定時、上限(429)に当たったら Chirp3 HD へ自動切替
  */
 export const GEMINI_ENDPOINT =
   'https://generativelanguage.googleapis.com/v1beta/interactions'
 const CHIRP_ENDPOINT = 'https://texttospeech.googleapis.com/v1/text:synthesize'
 /** デプロイ確認用。診断ページに出るので、反映されたかが一目で分かる */
-export const KIT_PATCH_VERSION = 'p13'
+export const KIT_PATCH_VERSION = 'p14'
 
 /** 実際に送るモデル名。環境変数も定数も参照しない直値。ここが唯一の正 */
 const SENT_MODEL = 'gemini-3.8-flash-lite-tts'
@@ -27,6 +29,9 @@ const SENT_MODEL = 'gemini-3.8-flash-lite-tts'
 /** 使うモデルの唯一の正。他の定数や環境変数に引きずられないよう直値で持つ */
 export const PREFERRED_GEMINI_TTS_MODEL = SENT_MODEL
 export const DEFAULT_GEMINI_MODEL = SENT_MODEL
+
+/** 既定のプライマリ。gemini 優先で、上限に当たったら自動で Chirp に切り替える */
+const DEFAULT_PRIMARY = 'gemini'
 
 /** 実際に本文へ入れるモデル名を返す（診断ページ用） */
 export function getSentModel(): string {
@@ -44,7 +49,25 @@ const MAX_RETRY_DELAY_MS = 5000
  * サーバーレスのインスタンスが再利用される間だけ効く、ベストエフォートの仕組み。
  */
 const DAILY_QUOTA_COOLDOWN_MS = 10 * 60 * 1000
+/** 回復時刻が読めないときに待つ上限。これ以上は待たない */
+const MAX_COOLDOWN_MS = 24 * 60 * 60 * 1000
 let geminiCooldownUntil = 0
+
+/** 診断ページ用: Gemini のクールダウン残り(ms)。0 なら使用可 */
+export function getGeminiCooldownRemainingMs(): number {
+  return Math.max(0, geminiCooldownUntil - Date.now())
+}
+
+/** 診断ページ用: 実際に使われるプライマリ（env 優先） */
+export function getPrimaryEngine(): string {
+  const fromEnv = (process.env.TTS_PRIMARY || '').trim().toLowerCase()
+  return fromEnv || DEFAULT_PRIMARY
+}
+
+/** テスト用: クールダウンを解除する */
+export function resetGeminiCooldown(): void {
+  geminiCooldownUntil = 0
+}
 
 /** 旧世代（1.x / 2.x / 3.0〜3.7）は 1日100回などの厳しい上限を持つので使わない */
 const LEGACY_MODEL_PATTERN = /gemini-(1\.|2\.|3\.[0-7])/
@@ -108,6 +131,22 @@ function parseRetryDelayMs(errorText: string): number | null {
   const bare = errorText.match(/retryDelay"?\s*[:=]\s*"?([0-9.]+)s/)
   if (bare) return Math.round(Number(bare[1]) * 1000)
   return null
+}
+
+/**
+ * 429 の本文にある「retry in 11h21m38s」形式から待ち時間を取り出す。
+ * 日次上限ではこの形式で回復時刻が返るので、その時刻まで Gemini を試さない。
+ */
+function parseRetryInMs(errorText: string): number | null {
+  const m = errorText.match(
+    /retry in\s+(?:(\d+)h)?\s*(?:(\d+)m)?\s*([0-9.]+)s/i
+  )
+  if (!m) return null
+  const hours = Number(m[1] || 0)
+  const minutes = Number(m[2] || 0)
+  const seconds = Number(m[3] || 0)
+  const total = (hours * 3600 + minutes * 60 + seconds) * 1000
+  return total > 0 ? Math.round(total) : null
 }
 
 function isRetryableStatus(status: number): boolean {
@@ -302,13 +341,23 @@ export async function synthesizeWithGemini(
 
     // 1日の上限なら待っても回復しない。無音を長引かせず即フォールバックする。
     if (response.status === 429 && isDailyQuota(errorText, suggested)) {
-      geminiCooldownUntil = Date.now() + DAILY_QUOTA_COOLDOWN_MS
-      logger.warn(
-        'Gemini TTS: daily quota reached, skipping Gemini for a while'
-      )
+      const recoverIn = parseRetryInMs(errorText) ?? suggested
+      const cooldown =
+        recoverIn && recoverIn > 0
+          ? Math.min(recoverIn + 1000, MAX_COOLDOWN_MS)
+          : DAILY_QUOTA_COOLDOWN_MS
+      geminiCooldownUntil = Date.now() + cooldown
+      logger.warn('Gemini TTS: quota reached, switching to Chirp', {
+        cooldownSec: Math.round(cooldown / 1000),
+      })
       throw new Error(
         `Gemini TTS daily quota exceeded: ${errorText.slice(0, 240)}`
       )
+    }
+
+    // 429 は長く待たない。1回だけ再試行し、それでも駄目なら Chirp に回す
+    if (response.status === 429 && attempt >= 1) {
+      throw new Error(`Gemini TTS rate limited: ${errorText.slice(0, 240)}`)
     }
 
     const wait =
@@ -413,7 +462,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
   // 既定は Chirp 3 HD。
   // Gemini TTS は Tier 1 でも 1日100リクエストの上限があり、
   // 1返答で5〜7回呼ぶこのアプリでは1日15往復ほどで尽きてしまうため。
-  const primary = (process.env.TTS_PRIMARY || 'chirp').trim().toLowerCase()
+  const primary = getPrimaryEngine()
 
   let preferChirp: boolean
   if (requestedModel.startsWith('gemini')) {

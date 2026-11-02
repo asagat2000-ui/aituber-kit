@@ -307,6 +307,25 @@ export const routePolicies = {
     },
     restrictedBehavior: 'none',
   },
+
+  '/api/tts-diag': {
+    demoBehavior: 'deny',
+    path: '/api/tts-diag',
+    featureName: 'openAITTS',
+    methods: ['POST'],
+    resources: ['server-secret'],
+    secret: {
+      kind: 'pairs',
+      pairs: [
+        {
+          source: 'body',
+          key: 'apiKey',
+          envVars: ['OPENAI_TTS_KEY', 'OPENAI_API_KEY'],
+        },
+      ],
+    },
+    restrictedBehavior: 'none',
+  },
   '/api/save-chat-log': {
     path: '/api/save-chat-log',
     featureName: 'save-chat-log',

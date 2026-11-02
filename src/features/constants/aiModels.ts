@@ -356,6 +356,9 @@ const modelDefinitions: Record<AIService, ModelInfo[]> = {
     {
       name: 'gemini-3.8-flash',
       multiModal: true,
+      // 公式ドキュメントの supported thinking levels: LOW / MEDIUM / HIGH
+      // （MINIMAL は非対応、既定は MEDIUM）
+      reasoningEfforts: ['low', 'medium', 'high'],
     },
     {
       name: 'gemini-3.8-flash-lite',
@@ -902,6 +905,8 @@ export function isMultiModalAvailable(
 }
 
 export const googleSearchGroundingModels = [
+  // Gemini 3.8 Flash は Grounding with Google Search に対応（公式の対応表に記載）
+  'gemini-3.8-flash',
   'gemini-3.5-flash',
   'gemini-3.5-flash-lite',
   'gemini-3.1-pro-preview',

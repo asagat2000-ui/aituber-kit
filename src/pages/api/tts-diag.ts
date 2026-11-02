@@ -1,4 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
+import { withAccessPolicy } from '@/lib/accessPolicy/withAccessPolicy'
+import { routePolicies } from '@/lib/accessPolicy/routePolicies'
 import {
   GEMINI_ENDPOINT,
   DEFAULT_GEMINI_MODEL,
@@ -11,6 +13,8 @@ import {
   synthesizeWithGemini,
   KIT_PATCH_VERSION,
   getSentModel,
+  getPrimaryEngine,
+  getGeminiCooldownRemainingMs,
 } from './openAITTS'
 
 /** この診断ページ自身が持つ直値。openAITTS 側と食い違えば「別物」と分かる */
@@ -263,7 +267,16 @@ ${
     : '<a class="btn" href="?burst=1">連投テスト（7回）を実行</a>'
 }
 <p class="note">末尾4文字が Cloud Shell の <code>~/.gk</code> と同じか確認してください。違えば Vercel のキーが別物です。</p>
+      <div class="card" style="margin-top:16px">
+        <b>プライマリ</b>: ${esc(getPrimaryEngine())}
+        　<b>Geminiクールダウン残り</b>: ${Math.round(
+          getGeminiCooldownRemainingMs() / 1000
+        )}秒
+        <div style="opacity:.7;margin-top:6px">
+          0秒なら Gemini を使用します。1秒以上なら上限に当たり Chirp3 HD に切り替わっています。
+        </div>
+      </div>
 </body></html>`)
 }
 
-export default handler
+export default withAccessPolicy(routePolicies['/api/tts-diag'], handler)
