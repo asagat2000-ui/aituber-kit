@@ -3,12 +3,26 @@ import { LipSyncAnalyzeResult } from './lipSyncAnalyzeResult'
 
 const TIME_DOMAIN_DATA_LENGTH = 2048
 
+/**
+ * iOS の音声セッションを「再生」に切り替えるための無音WAV。
+ * これを <audio> で一度鳴らすと、サイレントスイッチが下でも Web Audio が鳴るようになる。
+ */
+const SILENT_WAV_URI =
+  'data:audio/wav;base64,UklGRnQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YVAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=='
+
+/** resume() が返らない環境（iOS）で固まらないための待ち時間 */
+const RESUME_TIMEOUT_MS = 150
+/** 音が出ないまま発話キューが詰まるのを防ぐ */
+const PLAYBACK_GIVEUP_MS = 15000
+
 export class LipSync {
   public readonly audio: AudioContext
   public readonly analyser: AnalyserNode
   public readonly timeDomainData: Float32Array
   private userInteracted: boolean = false
   private waitingForInteraction: boolean = false
+  private iosSessionUnlocked = false
+  private unlockBanner: HTMLDivElement | null = null
   private pendingPlaybacks: Array<() => void> = []
   private forceStart: boolean = false
   private currentSource: AudioBufferSourceNode | null = null
@@ -23,69 +37,155 @@ export class LipSync {
     this.timeDomainData = new Float32Array(TIME_DOMAIN_DATA_LENGTH)
     this.forceStart = options?.forceStart || false
 
-    // forceStartが有効な場合は強制的にインタラクション済みとマーク
+    // iOS Safari は「ユーザー操作の外で作った AudioContext」を suspended のまま維持し、
+    // resume() も黙って失敗する。forceStart でもリスナーは必ず登録する。
+    this.setupUserInteractionDetection()
+
     if (this.forceStart) {
       this.userInteracted = true
       this.tryResumeAudio().catch((error) => {
         logger.warn('Failed to force resume AudioContext:', error)
       })
-    } else {
-      // 通常のユーザーインタラクション検出を設定
-      this.setupUserInteractionDetection()
     }
+
+    this.audio.onstatechange = () => this.updateBanner()
+    this.updateBanner()
+  }
+
+  /** 現在の AudioContext の状態（診断用） */
+  public getAudioState(): string {
+    return this.audio.state
+  }
+
+  /**
+   * iOS の音声セッションを「再生」に切り替える。
+   * 無音を <audio> で鳴らすことで、サイレントスイッチが下でも
+   * Web Audio がミュートされなくなる。
+   */
+  private unlockIosAudioSession(): void {
+    if (this.iosSessionUnlocked) return
+    // テスト環境（jsdom）には Audio 実装が無いため触らない
+    if (typeof window === 'undefined' || typeof window.Audio !== 'function') {
+      return
+    }
+    this.iosSessionUnlocked = true
+    try {
+      const el = new Audio()
+      el.setAttribute('playsinline', 'true')
+      el.setAttribute('webkit-playsinline', 'true')
+      el.src = SILENT_WAV_URI
+      el.volume = 0.01
+      const played = el.play()
+      if (played && typeof played.catch === 'function') {
+        played.catch(() => {
+          // 失敗したら次回のタップで再試行できるように戻す
+          this.iosSessionUnlocked = false
+        })
+      }
+    } catch (error) {
+      this.iosSessionUnlocked = false
+      logger.warn('Failed to unlock iOS audio session:', error)
+    }
+  }
+
+  /** 音が出ない状態のときだけ画面下に案内を出す */
+  private updateBanner(): void {
+    if (typeof document === 'undefined') return
+    const running = this.audio.state === 'running'
+    if (running) {
+      if (this.unlockBanner) {
+        this.unlockBanner.remove()
+        this.unlockBanner = null
+      }
+      return
+    }
+    if (this.unlockBanner) return
+    const el = document.createElement('div')
+    el.textContent = '音が止まっています。画面をタップしてください'
+    el.style.cssText = [
+      'position:fixed',
+      'left:50%',
+      'bottom:16px',
+      'transform:translateX(-50%)',
+      'z-index:2147483647',
+      'background:rgba(20,20,20,.88)',
+      'color:#fff',
+      'font-size:14px',
+      'line-height:1.4',
+      'padding:8px 14px',
+      'border-radius:999px',
+      'pointer-events:none',
+      'box-shadow:0 2px 8px rgba(0,0,0,.3)',
+    ].join(';')
+    document.body.appendChild(el)
+    this.unlockBanner = el
   }
 
   // AudioContextの再開を試みるメソッド
-  private async tryResumeAudio(): Promise<void> {
-    if (this.audio.state === 'suspended') {
-      try {
-        await this.audio.resume()
-        logger.log('AudioContext resumed successfully')
-        // 保留中の再生を処理
-        this.processPendingPlaybacks()
-      } catch (error) {
-        logger.error('Failed to resume AudioContext:', error)
-      }
+  /**
+   * AudioContext の再開を試みる。
+   * 戻り値が true なら「鳴らせる状態になった」と判断してよい。
+   * iOS は操作なしだと resume() が解決しないため、必ずタイムアウトを挟む。
+   */
+  private async tryResumeAudio(): Promise<boolean> {
+    if (this.getAudioState() === 'running') return true
+
+    let resumed = false
+    try {
+      await Promise.race([
+        this.audio
+          .resume()
+          .then(() => {
+            resumed = true
+          })
+          .catch((error) => {
+            logger.warn('AudioContext resume rejected:', error)
+          }),
+        new Promise<void>((resolve) => setTimeout(resolve, RESUME_TIMEOUT_MS)),
+      ])
+    } catch (error) {
+      logger.error('Failed to resume AudioContext:', error)
+      return false
     }
+
+    // resume() が解決した＝ユーザー操作の文脈で解除できた、とみなす。
+    // （環境によっては state の文字列が即座に変わらないことがある）
+    // 操作後に resume が解決したなら鳴らせると判断する（forceStart 時の初回は除く）
+    if (
+      this.getAudioState() === 'running' ||
+      (resumed && this.userInteracted)
+    ) {
+      logger.log('AudioContext resumed successfully')
+      this.processPendingPlaybacks()
+      this.updateBanner()
+      return true
+    }
+
+    this.updateBanner()
+    return false
   }
 
   private setupUserInteractionDetection(): void {
-    // すでにアクティブなコンテキストの場合は設定をスキップ
-    if (this.audio.state === 'running') {
+    if (typeof window === 'undefined') return
+
+    const interactionEvents = ['pointerdown', 'touchstart', 'click', 'keydown']
+
+    // iOS はバックグラウンド復帰などで再び suspended に戻るため、
+    // 一度きりにせず毎回試す（処理は軽い）。
+    const handleInteraction = () => {
       this.userInteracted = true
-      return
+      this.unlockIosAudioSession()
+      void this.tryResumeAudio()
     }
 
-    // ユーザーインタラクションをリッスン
-    const interactionEvents = ['click', 'touchstart', 'keydown', 'mousedown']
-    const handleInteraction = async () => {
-      this.userInteracted = true
-
-      if (this.audio.state === 'suspended') {
-        try {
-          await this.audio.resume()
-          logger.log('AudioContext resumed successfully')
-        } catch (error) {
-          logger.error('Failed to resume AudioContext:', error)
-        }
-      }
-
-      // 保留中の再生を処理
-      this.processPendingPlaybacks()
-
-      // 一度だけ実行したいので、イベントリスナーを削除
-      interactionEvents.forEach((eventType) => {
-        window.removeEventListener(eventType, handleInteraction, true)
-      })
-    }
-
-    // イベントリスナーを追加
     interactionEvents.forEach((eventType) => {
       window.addEventListener(eventType, handleInteraction, true)
     })
   }
 
   private processPendingPlaybacks(): void {
+    // ユーザー操作を契機に呼ばれる。ここで流さないと発話キューが詰まるため、
+    // 状態に関わらず保留分を解放する（実際に鳴るかは resume の成否に従う）。
     if (this.pendingPlaybacks.length > 0) {
       logger.log(
         `Processing ${this.pendingPlaybacks.length} pending audio playbacks`
@@ -97,28 +197,25 @@ export class LipSync {
   }
 
   private async ensureAudioContextReady(): Promise<boolean> {
-    // forceStartが有効な場合は常に準備完了とみなす
-    if (this.forceStart) {
-      await this.tryResumeAudio()
-      return true
+    if (this.audio.state === 'running') return true
+
+    // まだユーザー操作が無いうちは resume を試みない。
+    // iOS ではこの段階の resume() が永久に解決しないため、待つだけ無駄になる。
+    if (!this.userInteracted && !this.forceStart) {
+      this.waitingForInteraction = true
+      this.updateBanner()
+      logger.warn('AudioContext cannot start: waiting for user interaction')
+      return false
     }
 
-    if (this.audio.state === 'running') {
-      return true
-    }
+    const resumed = await this.tryResumeAudio()
+    if (resumed) return true
 
-    if (this.userInteracted) {
-      try {
-        await this.audio.resume()
-        return true
-      } catch (error) {
-        logger.error('Failed to resume AudioContext:', error)
-        return false
-      }
-    }
-
+    // 実際には鳴らないのに true を返すと、無音のまま「再生済み」になる。
+    // ここは必ず false を返し、保留キューに積む。
     this.waitingForInteraction = true
-    logger.warn('AudioContext cannot start: waiting for user interaction')
+    this.updateBanner()
+    logger.warn('AudioContext is not running: waiting for user gesture')
     return false
   }
 
@@ -166,7 +263,9 @@ export class LipSync {
 
     if (!isReady) {
       // ユーザーインタラクションを待つ
-      this.pendingPlaybacks.push(() => {
+      let settled = false
+      const retry = () => {
+        settled = true
         if (queuedGeneration !== this.streamPlaybackGeneration) return
         this.playFromArrayBuffer(
           buffer,
@@ -175,7 +274,17 @@ export class LipSync {
           sampleRate,
           onStarted
         )
-      })
+      }
+      this.pendingPlaybacks.push(retry)
+      // 音が出ないまま発話キューが永久に詰まるのを防ぐ
+      setTimeout(() => {
+        if (settled) return
+        const index = this.pendingPlaybacks.indexOf(retry)
+        if (index >= 0) this.pendingPlaybacks.splice(index, 1)
+        logger.warn('AudioContext never resumed: skipping this playback')
+        this.updateBanner()
+        onEnded?.()
+      }, PLAYBACK_GIVEUP_MS)
       return
     }
 
