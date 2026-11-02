@@ -1,11 +1,6 @@
 import { logger } from '@/lib/logger'
 import { LipSyncAnalyzeResult } from './lipSyncAnalyzeResult'
-import {
-  registerAudioContext,
-  getGestureCount,
-  getReplaceCount,
-  getSharedAudioContext,
-} from './audioUnlock'
+import { registerAudioContext, getSharedAudioContext } from './audioUnlock'
 
 const TIME_DOMAIN_DATA_LENGTH = 2048
 
@@ -163,10 +158,7 @@ export class LipSync {
     }
     if (this.unlockBanner) return
     const el = document.createElement('div')
-    const rate = this.audio.sampleRate
-    el.textContent =
-      `音が止まっています。画面をタップしてください` +
-      `（${this.audio.state} / ${rate}Hz / タップ${getGestureCount()}回 / 再生成${getReplaceCount()}回）`
+    el.textContent = '音が止まっています。画面をタップしてください'
     el.style.cssText = [
       'position:fixed',
       'left:50%',
