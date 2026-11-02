@@ -1,6 +1,11 @@
 import { logger } from '@/lib/logger'
 import { LipSyncAnalyzeResult } from './lipSyncAnalyzeResult'
-import { registerAudioContext } from './audioUnlock'
+import {
+  registerAudioContext,
+  getGestureCount,
+  getReplaceCount,
+  getSharedAudioContext,
+} from './audioUnlock'
 
 const TIME_DOMAIN_DATA_LENGTH = 2048
 
@@ -52,7 +57,10 @@ export class LipSync {
     this.audio.onstatechange = () => this.updateBanner()
     registerAudioContext({
       get: () => this.audio,
-      recreate: () => this.recreateAudioContext(),
+      onReplace: (ctx) => {
+        this.audio = ctx
+        this.audio.onstatechange = () => this.updateBanner()
+      },
     })
     this.updateBanner()
   }
@@ -68,9 +76,8 @@ export class LipSync {
       // 停止できなくても作り直しは続行する
     }
     try {
-      this.audio = new AudioContext()
+      this.audio = getSharedAudioContext(true)
       this.audio.onstatechange = () => this.updateBanner()
-      void this.tryResumeAudio()
       logger.log('AudioContext recreated:', this.audio.state)
     } catch (error) {
       logger.error('Failed to recreate AudioContext:', error)
@@ -129,7 +136,7 @@ export class LipSync {
     const rate = this.audio.sampleRate
     el.textContent =
       `音が止まっています。画面をタップしてください` +
-      `（${this.audio.state} / ${rate}Hz）`
+      `（${this.audio.state} / ${rate}Hz / タップ${getGestureCount()}回 / 再生成${getReplaceCount()}回）`
     el.style.cssText = [
       'position:fixed',
       'left:50%',

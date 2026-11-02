@@ -4,7 +4,10 @@
  */
 
 import { logger } from '@/lib/logger'
-import { getSharedAudioContext } from '@/features/lipSync/audioUnlock'
+import {
+  getSharedAudioContext,
+  registerAudioContext,
+} from '@/features/lipSync/audioUnlock'
 import {
   MouthState,
   MouthTrackData,
@@ -202,6 +205,18 @@ export class PNGTuberEngine implements IPNGTuberEngine {
       return
     }
 
+    if (!this.audioUnlockRegistered) {
+      this.audioUnlockRegistered = true
+      registerAudioContext({
+        get: () => this.audioContext,
+        onReplace: (ctx) => {
+          this.audioContext = ctx
+          // 新しい Context には Worklet が未登録なので、登録し直せるようにする
+          this.audioWorkletReady = null
+        },
+      })
+    }
+
     this.audioContext = getSharedAudioContext()
 
     // AudioWorkletを登録
@@ -268,7 +283,12 @@ export class PNGTuberEngine implements IPNGTuberEngine {
 
     // close 済みなら作り直す（復帰は不可能なため）
     if (this.audioContext.state === 'closed') {
-      this.audioContext = getSharedAudioContext()
+      this.audioContext = getSharedAudioContext(true)
+      this.audioWorkletReady = null
+      await this.initAudioContext()
+      if (!this.audioContext) {
+        throw new Error('AudioContext not initialized')
+      }
     }
     // AudioContextがsuspended状態の場合はresumeする
     if (this.audioContext.state === 'suspended') {
