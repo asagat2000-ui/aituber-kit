@@ -287,6 +287,8 @@ interface General {
   noSpeechTimeout: number
   showSilenceProgressBar: boolean
   continuousMicListeningMode: boolean
+  /** 発話後に設定秒数だけマイクを自動再開する（p24） */
+  afterSpeakAutoResume: boolean
   presetQuestions: PresetQuestion[]
   showPresetQuestions: boolean
   speechRecognitionMode: SpeechRecognitionMode
@@ -672,6 +674,8 @@ const getInitialValuesFromEnv = (): SettingsState => ({
     process.env.NEXT_PUBLIC_SHOW_SILENCE_PROGRESS_BAR === 'true',
   continuousMicListeningMode:
     process.env.NEXT_PUBLIC_CONTINUOUS_MIC_LISTENING_MODE === 'true',
+  afterSpeakAutoResume:
+    process.env.NEXT_PUBLIC_AFTER_SPEAK_AUTO_RESUME !== 'false',
   presetQuestions: (
     process.env.NEXT_PUBLIC_PRESET_QUESTIONS?.split(',') || []
   ).map((text, index) => ({
@@ -1321,6 +1325,7 @@ export const selectPersistedSettings = (state: SettingsState) => ({
   noSpeechTimeout: state.noSpeechTimeout,
   showSilenceProgressBar: state.showSilenceProgressBar,
   continuousMicListeningMode: state.continuousMicListeningMode,
+  afterSpeakAutoResume: state.afterSpeakAutoResume,
   presetQuestions: state.presetQuestions,
   showPresetQuestions: state.showPresetQuestions,
   speechRecognitionMode: state.speechRecognitionMode,

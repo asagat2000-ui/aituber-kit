@@ -4,6 +4,13 @@ import { useIsomorphicLayoutEffect } from './useIsomorphicLayoutEffect'
 import settingsStore from '@/features/stores/settings'
 import homeStore from '@/features/stores/home'
 import { SpeakQueue } from '@/features/messages/speakQueue'
+import {
+  clearAutoResumeSession,
+  clearManualMicOffSuppression,
+  isManualMicOffSuppressed,
+  markAutoResumeSession,
+  markManualMicOff,
+} from '@/features/voice/autoResumeState'
 import { useBrowserSpeechRecognition } from './useBrowserSpeechRecognition'
 import { useWhisperRecognition } from './useWhisperRecognition'
 import { useRealtimeVoiceAPI } from './useRealtimeVoiceAPI'
@@ -33,6 +40,8 @@ export function useVoiceRecognition({
   const continuousMicListeningMode = settingsStore(
     (s) => s.continuousMicListeningMode
   )
+  const initialSpeechTimeout = settingsStore((s) => s.initialSpeechTimeout)
+  const afterSpeakAutoResume = settingsStore((s) => s.afterSpeakAutoResume)
   const voiceInputShortcut =
     settingsStore((s) => s.voiceInputShortcut) || DEFAULT_VOICE_INPUT_SHORTCUT
 
@@ -62,6 +71,7 @@ export function useVoiceRecognition({
   const currentHookRef = useRef({
     startListening: currentHook.startListening,
     stopListening: currentHook.stopListening,
+    toggleListening: currentHook.toggleListening,
     userMessage: currentHook.userMessage,
     isListening: currentHook.isListening,
     handleInputChange: currentHook.handleInputChange,
@@ -79,6 +89,7 @@ export function useVoiceRecognition({
     currentHookRef.current = {
       startListening: currentHook.startListening,
       stopListening: currentHook.stopListening,
+      toggleListening: currentHook.toggleListening,
       userMessage: currentHook.userMessage,
       isListening: currentHook.isListening,
       handleInputChange: currentHook.handleInputChange,
@@ -115,18 +126,65 @@ export function useVoiceRecognition({
 
   // AIの発話完了後に音声認識を自動的に再開する処理
   const handleSpeakCompletion = useCallback(() => {
-    // 常時マイク入力モードがONで、現在マイク入力が行われていない場合のみ実行
-    if (
-      continuousMicListeningMode &&
-      speechRecognitionMode === 'browser' &&
-      !homeStore.getState().chatProcessing
-    ) {
+    if (speechRecognitionMode !== 'browser') return
+    if (homeStore.getState().chatProcessing) return
+
+    // 常時マイク入力モードがON: 従来どおり無条件で再開
+    if (continuousMicListeningMode) {
       logger.log('🔄 AIの発話が完了しました。音声認識を自動的に再開します。')
       setTimeout(() => {
         currentHookRef.current.startListening()
       }, 300) // マイク起動までに少し遅延を入れる
+      return
     }
-  }, [continuousMicListeningMode, speechRecognitionMode])
+
+    // 常時マイク入力モードがOFF: 発話後マイク自動再開（p24）
+    // 音声認識タイムアウトで常時マイクがOFFにされた後でも、AIが話し終えたら
+    // 設定秒数だけ聞き取りをやり直す。手動でOFFにした直後は再開しない。
+    const canAutoResume =
+      afterSpeakAutoResume && // 設定で有効
+      initialSpeechTimeout > 0 && // 0秒なら無効
+      !isManualMicOffSuppressed() // 手動OFFから60秒は抑制
+
+    if (!canAutoResume) return
+
+    markAutoResumeSession()
+    logger.log(
+      '🔄 AIの発話が完了しました。設定時間だけ音声認識を自動的に再開します。'
+    )
+    setTimeout(() => {
+      if (
+        !settingsStore.getState().continuousMicListeningMode &&
+        !homeStore.getState().isSpeaking &&
+        !homeStore.getState().chatProcessing &&
+        !currentHookRef.current.isListening
+      ) {
+        currentHookRef.current.startListening()
+      }
+    }, 300)
+  }, [
+    continuousMicListeningMode,
+    speechRecognitionMode,
+    afterSpeakAutoResume,
+    initialSpeechTimeout,
+  ])
+
+  // ----- 手動操作の記録（発話後自動再開の抑制に使う） -----
+  const toggleListeningWithManualMark = useCallback(async (): Promise<void> => {
+    if (currentHookRef.current.isListening) {
+      markManualMicOff()
+    } else {
+      // 手動でONにした場合は抑制を解除して、次の発話後は自動再開させる
+      clearManualMicOffSuppression()
+      clearAutoResumeSession()
+    }
+    await currentHookRef.current.toggleListening()
+  }, [])
+
+  const stopListeningWithManualMark = useCallback(async (): Promise<void> => {
+    markManualMicOff()
+    await currentHookRef.current.stopListening()
+  }, [])
 
   // 常時マイク入力モードの変更を監視
   useEffect(() => {
@@ -354,9 +412,9 @@ export function useVoiceRecognition({
     silenceTimeoutRemaining: currentHook.silenceTimeoutRemaining,
     handleInputChange: currentHook.handleInputChange,
     handleSendMessage: currentHook.handleSendMessage,
-    toggleListening: currentHook.toggleListening,
+    toggleListening: toggleListeningWithManualMark,
     handleStopSpeaking,
     startListening: currentHook.startListening,
-    stopListening: currentHook.stopListening,
+    stopListening: stopListeningWithManualMark,
   }
 }

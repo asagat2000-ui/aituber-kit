@@ -1,4 +1,8 @@
 import { logger } from '@/lib/logger'
+import {
+  clearAutoResumeSession,
+  isAutoResumeSession,
+} from '@/features/voice/autoResumeState'
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { getVoiceLanguageCode } from '@/utils/voiceLanguage'
 import settingsStore from '@/features/stores/settings'
@@ -71,10 +75,22 @@ export function useBrowserSpeechRecognition(
       )
       await stopListeningFn()
 
+      // 発話後の自動再開（p24）で始まった聞き取りかどうか
+      // 自動再開が設定時間を過ぎただけの場合はトーストを出さず静かに終了する
+      const wasAutoResume = isAutoResumeSession()
+      clearAutoResumeSession()
+
       // 常時マイク入力モードをオフに設定
       if (settingsStore.getState().continuousMicListeningMode) {
         logger.log('🔇 音声未検出により常時マイク入力モードをOFFに設定します。')
         settingsStore.setState({ continuousMicListeningMode: false })
+      }
+
+      if (wasAutoResume) {
+        logger.log(
+          '🔇 発話後の自動再開が設定時間を過ぎたため、音声認識を停止しました。'
+        )
+        return
       }
 
       toastStore.getState().addToast({
@@ -435,6 +451,8 @@ export function useBrowserSpeechRecognition(
         logger.log('🎤 有意な音声を検出しました（トランスクリプト変更あり）')
         updateSpeechTimestamp()
         speechDetectedRef.current = true
+        // 発話を検知したので自動再開セッションは終了
+        clearAutoResumeSession()
       } else {
         logger.log(
           '🔇 バックグラウンドノイズを無視します（トランスクリプト変更なし）'

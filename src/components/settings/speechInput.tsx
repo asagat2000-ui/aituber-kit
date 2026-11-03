@@ -24,6 +24,7 @@ const SpeechInput = () => {
     (s) => s.continuousMicListeningMode
   )
   const initialSpeechTimeout = settingsStore((s) => s.initialSpeechTimeout)
+  const afterSpeakAutoResume = settingsStore((s) => s.afterSpeakAutoResume)
   const liveMode = settingsStore((s) => s.liveMode)
   const realtimeAPIMode = settingsStore((s) => s.realtimeAPIMode)
   const audioMode = settingsStore((s) => s.audioMode)
@@ -249,6 +250,21 @@ const SpeechInput = () => {
                 }
                 testId="continuous-mic-listening-toggle"
               />
+              <div className="mt-6">
+                <div className="font-bold mb-2">
+                  {t('AfterSpeakAutoResume')}
+                </div>
+                <div className="my-2 text-sm whitespace-pre-wrap">
+                  {t('AfterSpeakAutoResumeInfo')}
+                </div>
+                <ToggleSwitch
+                  enabled={afterSpeakAutoResume}
+                  onChange={(v) =>
+                    settingsStore.setState({ afterSpeakAutoResume: v })
+                  }
+                  testId="after-speak-auto-resume-toggle"
+                />
+              </div>
             </div>
           )}
         </>

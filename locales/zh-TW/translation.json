@@ -957,5 +957,7 @@
       "wave": "揮手、打招呼",
       "clap": "拍手、讚賞"
     }
-  }
+  },
+  "AfterSpeakAutoResume": "Resume microphone after speech",
+  "AfterSpeakAutoResumeInfo": "When the AI finishes speaking, the microphone turns on automatically for the seconds set in 'Speech Recognition Timeout' above, even if Continuous Mic is off. It turns off again if nothing is said within that time. It does not resume within 60 seconds of turning the mic off manually."
 }

@@ -196,7 +196,6 @@
   "AivisSpeechServerUrl": "AivisSpeech サーバーURL",
   "NoClientIDSet": "クライアントIDが設定されていません",
   "UpdateSpeakerList": "話者リストを更新",
-  "Updating": "更新中...",
   "NetworkError": "ネットワークエラーが発生しました",
   "UsingGoogleTTS": "Google Text-to-Speechを使用する",
   "UsingStyleBertVITS2": "Style-Bert-VITS2を使用する",
@@ -341,7 +340,6 @@
   "ChatLogModeAssistant": "回答欄",
   "ChatLogModeChatLog": "会話ログ",
   "ChatLogModeHidden": "非表示",
-  "AttachImage": "画像を添付",
   "ShowCharacterName": "回答欄にキャラクター名を表示する",
   "ShowControlPanel": "操作パネルを表示する",
   "ShowControlPanelInfo": "操作パネルを非表示にしても、下のショートカットで設定画面を表示できます。\nスマホ・タブレットでは、画面左上を長押し（約1秒）して表示できます。",
@@ -959,5 +957,7 @@
       "closed": "会話を終了しました",
       "error": "接続が終了しました"
     }
-  }
+  },
+  "AfterSpeakAutoResume": "発話後のマイク自動再開",
+  "AfterSpeakAutoResumeInfo": "AIが話し終えたとき、常時マイク入力がOFFでも、上の「音声認識タイムアウト」で設定した秒数だけ自動でマイクをONにします。設定時間内に話しかけなければ自動でOFFに戻ります。手動でマイクをOFFにした直後の60秒間は再開しません。"
 }
