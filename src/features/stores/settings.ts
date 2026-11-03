@@ -289,6 +289,14 @@ interface General {
   continuousMicListeningMode: boolean
   /** 発話後に設定秒数だけマイクを自動再開する（p24） */
   afterSpeakAutoResume: boolean
+  /** スリープ時間帯を使う（p25） */
+  sleepModeEnabled: boolean
+  /** スリープ開始時刻 "HH:MM" */
+  sleepStartTime: string
+  /** スリープ終了時刻 "HH:MM" */
+  sleepEndTime: string
+  /** スリープ中に画面を暗転する */
+  sleepScreenDim: boolean
   presetQuestions: PresetQuestion[]
   showPresetQuestions: boolean
   speechRecognitionMode: SpeechRecognitionMode
@@ -676,6 +684,10 @@ const getInitialValuesFromEnv = (): SettingsState => ({
     process.env.NEXT_PUBLIC_CONTINUOUS_MIC_LISTENING_MODE === 'true',
   afterSpeakAutoResume:
     process.env.NEXT_PUBLIC_AFTER_SPEAK_AUTO_RESUME !== 'false',
+  sleepModeEnabled: process.env.NEXT_PUBLIC_SLEEP_MODE_ENABLED === 'true',
+  sleepStartTime: process.env.NEXT_PUBLIC_SLEEP_START_TIME || '23:00',
+  sleepEndTime: process.env.NEXT_PUBLIC_SLEEP_END_TIME || '06:00',
+  sleepScreenDim: process.env.NEXT_PUBLIC_SLEEP_SCREEN_DIM !== 'false',
   presetQuestions: (
     process.env.NEXT_PUBLIC_PRESET_QUESTIONS?.split(',') || []
   ).map((text, index) => ({
@@ -1326,6 +1338,10 @@ export const selectPersistedSettings = (state: SettingsState) => ({
   showSilenceProgressBar: state.showSilenceProgressBar,
   continuousMicListeningMode: state.continuousMicListeningMode,
   afterSpeakAutoResume: state.afterSpeakAutoResume,
+  sleepModeEnabled: state.sleepModeEnabled,
+  sleepStartTime: state.sleepStartTime,
+  sleepEndTime: state.sleepEndTime,
+  sleepScreenDim: state.sleepScreenDim,
   presetQuestions: state.presetQuestions,
   showPresetQuestions: state.showPresetQuestions,
   speechRecognitionMode: state.speechRecognitionMode,

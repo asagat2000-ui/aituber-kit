@@ -6,6 +6,7 @@ import { SpeakQueue } from '@/features/messages/speakQueue'
 import { IdlePhrase, EmotionType } from '@/features/idle/idleTypes'
 import { Talk } from '@/features/messages/messages'
 import { generateIdleAIPhrase } from '@/features/idle/generateIdleAIPhrase'
+import { isSleepingNow } from '@/features/sleep/sleepStore'
 
 /**
  * アイドル状態の型定義
@@ -133,6 +134,11 @@ export function useIdleMode({
 
     // 人感検知で人がいる場合は発話しない
     if (hs.presenceState !== 'idle') {
+      return false
+    }
+
+    // スリープ時間帯はアイドル発話をしない
+    if (isSleepingNow()) {
       return false
     }
 

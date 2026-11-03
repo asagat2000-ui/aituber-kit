@@ -11,6 +11,7 @@ import {
   markAutoResumeSession,
   markManualMicOff,
 } from '@/features/voice/autoResumeState'
+import { isSleepingNow } from '@/features/sleep/sleepStore'
 import { useBrowserSpeechRecognition } from './useBrowserSpeechRecognition'
 import { useWhisperRecognition } from './useWhisperRecognition'
 import { useRealtimeVoiceAPI } from './useRealtimeVoiceAPI'
@@ -128,6 +129,8 @@ export function useVoiceRecognition({
   const handleSpeakCompletion = useCallback(() => {
     if (speechRecognitionMode !== 'browser') return
     if (homeStore.getState().chatProcessing) return
+    // スリープ時間帯は発話後の自動再開をしない
+    if (isSleepingNow()) return
 
     // 常時マイク入力モードがON: 従来どおり無条件で再開
     if (continuousMicListeningMode) {
@@ -193,7 +196,8 @@ export function useVoiceRecognition({
       !currentHookRef.current.isListening &&
       speechRecognitionMode === 'browser' &&
       !homeStore.getState().isSpeaking &&
-      !homeStore.getState().chatProcessing
+      !homeStore.getState().chatProcessing &&
+      !isSleepingNow()
     ) {
       // 常時マイク入力モードがONになった場合、自動的にマイク入力を開始
       logger.log(
@@ -207,11 +211,24 @@ export function useVoiceRecognition({
   // マイクがOFFになっていたら自動でONに戻す
   useEffect(() => {
     // 常時マイク入力モードがOFF、またはブラウザモード以外の場合は何もしない
-    if (!continuousMicListeningMode || speechRecognitionMode !== 'browser') {
+    if (speechRecognitionMode !== 'browser') {
       return
     }
 
     const checkAndRestartMic = () => {
+      // スリープ時間帯はマイクを開かない。開いていたら閉じる
+      if (isSleepingNow()) {
+        if (currentHookRef.current.isListening) {
+          logger.log('🌙 スリープ時間帯のためマイクを停止します。')
+          currentHookRef.current.stopListening()
+        }
+        return
+      }
+
+      if (!settingsStore.getState().continuousMicListeningMode) {
+        return
+      }
+
       const isSpeaking = homeStore.getState().isSpeaking
       const chatProcessing = homeStore.getState().chatProcessing
       const isListening = currentHookRef.current.isListening

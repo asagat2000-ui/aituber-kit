@@ -11,6 +11,10 @@ const AppInitializer = dynamic(() => import('@/components/appInitializer'), {
   ssr: false,
 })
 
+const SleepOverlay = dynamic(() => import('@/features/sleep/sleepOverlay'), {
+  ssr: false,
+})
+
 export default function App({ Component, pageProps, router }: AppProps) {
   return (
     <>
@@ -25,6 +29,7 @@ export default function App({ Component, pageProps, router }: AppProps) {
       </Head>
       {router.pathname !== '/aituber' && <AppInitializer />}
       <Component {...pageProps} />
+      <SleepOverlay />
       <Analytics />
     </>
   )

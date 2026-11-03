@@ -959,5 +959,13 @@
     }
   },
   "AfterSpeakAutoResume": "Resume microphone after speech",
-  "AfterSpeakAutoResumeInfo": "When the AI finishes speaking, the microphone turns on automatically for the seconds set in 'Speech Recognition Timeout' above, even if Continuous Mic is off. It turns off again if nothing is said within that time. It does not resume within 60 seconds of turning the mic off manually."
+  "AfterSpeakAutoResumeInfo": "When the AI finishes speaking, the microphone turns on automatically for the seconds set in 'Speech Recognition Timeout' above, even if Continuous Mic is off. It turns off again if nothing is said within that time. It does not resume within 60 seconds of turning the mic off manually.",
+  "SleepMode": "Sleep hours",
+  "SleepModeInfo": "During these hours, idle speech and microphone input stop automatically, so the character will not talk on its own or leave the mic open late at night.",
+  "SleepStartTime": "Start",
+  "SleepEndTime": "End",
+  "SleepTimeRangeInfo": "If the start is later than the end, the window runs overnight (e.g. 23:00-06:00). If start and end are the same, the feature is disabled.",
+  "SleepScreenDim": "Dim the screen during sleep hours",
+  "SleepScreenDimInfo": "While dimmed, tap the screen to wake up. Once awake, it stays awake until the next sleep start time.",
+  "SleepTapToWake": "Tap to wake"
 }

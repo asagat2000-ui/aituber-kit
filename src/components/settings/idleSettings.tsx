@@ -56,6 +56,10 @@ const IdleSettings = () => {
     (s) => s.idleAiGenerationEnabled
   )
   const idleAiPromptTemplate = settingsStore((s) => s.idleAiPromptTemplate)
+  const sleepModeEnabled = settingsStore((s) => s.sleepModeEnabled)
+  const sleepStartTime = settingsStore((s) => s.sleepStartTime)
+  const sleepEndTime = settingsStore((s) => s.sleepEndTime)
+  const sleepScreenDim = settingsStore((s) => s.sleepScreenDim)
 
   // 排他制御による無効化判定
   const realtimeAPIMode = settingsStore((s) => s.realtimeAPIMode)
@@ -523,6 +527,70 @@ const IdleSettings = () => {
               />
             </div>
           )}
+          {/* スリープ時間帯（p25） */}
+          <div className="my-6 border-t border-gray-200 pt-6">
+            <div className="my-2 text-xl font-bold">{t('SleepMode')}</div>
+            <div className="my-2 text-sm whitespace-pre-wrap text-gray-600">
+              {t('SleepModeInfo')}
+            </div>
+            <ToggleSwitch
+              enabled={sleepModeEnabled}
+              onChange={(v) => settingsStore.setState({ sleepModeEnabled: v })}
+              testId="sleep-mode-toggle"
+            />
+            {sleepModeEnabled && (
+              <div className="mt-6">
+                <div className="flex items-center gap-4">
+                  <label className="flex items-center gap-2">
+                    <span className="text-sm font-bold">
+                      {t('SleepStartTime')}
+                    </span>
+                    <input
+                      type="time"
+                      value={sleepStartTime}
+                      onChange={(e) =>
+                        settingsStore.setState({
+                          sleepStartTime: e.target.value,
+                        })
+                      }
+                      data-testid="sleep-start-time-input"
+                      className="px-3 py-2 bg-white border border-gray-300 rounded-lg"
+                    />
+                  </label>
+                  <label className="flex items-center gap-2">
+                    <span className="text-sm font-bold">
+                      {t('SleepEndTime')}
+                    </span>
+                    <input
+                      type="time"
+                      value={sleepEndTime}
+                      onChange={(e) =>
+                        settingsStore.setState({ sleepEndTime: e.target.value })
+                      }
+                      data-testid="sleep-end-time-input"
+                      className="px-3 py-2 bg-white border border-gray-300 rounded-lg"
+                    />
+                  </label>
+                </div>
+                <div className="my-2 text-xs text-gray-500">
+                  {t('SleepTimeRangeInfo')}
+                </div>
+                <div className="mt-6">
+                  <div className="font-bold mb-2">{t('SleepScreenDim')}</div>
+                  <div className="my-2 text-sm whitespace-pre-wrap">
+                    {t('SleepScreenDimInfo')}
+                  </div>
+                  <ToggleSwitch
+                    enabled={sleepScreenDim}
+                    onChange={(v) =>
+                      settingsStore.setState({ sleepScreenDim: v })
+                    }
+                    testId="sleep-screen-dim-toggle"
+                  />
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </>
