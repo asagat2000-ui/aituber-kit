@@ -5,11 +5,11 @@ import { speakCharacter } from '@/features/messages/speakCharacter'
 import { SpeakQueue } from '@/features/messages/speakQueue'
 import { IdlePhrase, EmotionType } from '@/features/idle/idleTypes'
 import { Talk } from '@/features/messages/messages'
-import { generateIdleAIPhrase } from '@/features/idle/generateIdleAIPhrase'
 import {
+  generateIdleAIPhrase,
   isPhraseUsed,
   markPhraseUsed,
-} from '@/features/idle/idleTopicMemory'
+} from '@/features/idle/generateIdleAIPhrase'
 import { isSleepingNow } from '@/features/sleep/sleepStore'
 
 /**

@@ -105,7 +105,7 @@ describe('/api/openAITTS Gemini→Chirp 自動切替', () => {
     })
     const res = createRes()
 
-    await handler(req, res as never, () => {})
+    await handler(req, res as never)
 
     expect(global.fetch).toHaveBeenCalledTimes(2)
     expect(res.statusCode).toBe(200)
@@ -124,8 +124,7 @@ describe('/api/openAITTS Gemini→Chirp 自動切替', () => {
         voice: 'alloy',
         model: 'gemini-3.8-flash-lite-tts',
       }),
-      createRes() as never,
-      () => {}
+      createRes() as never
     )
     ;(global.fetch as jest.Mock).mockClear()
     ;(global.fetch as jest.Mock).mockResolvedValueOnce(chirpOk())
@@ -137,8 +136,7 @@ describe('/api/openAITTS Gemini→Chirp 自動切替', () => {
         voice: 'alloy',
         model: 'gemini-3.8-flash-lite-tts',
       }),
-      res as never,
-      () => {}
+      res as never
     )
 
     expect(global.fetch).toHaveBeenCalledTimes(1)
