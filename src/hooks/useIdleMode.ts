@@ -6,6 +6,10 @@ import { SpeakQueue } from '@/features/messages/speakQueue'
 import { IdlePhrase, EmotionType } from '@/features/idle/idleTypes'
 import { Talk } from '@/features/messages/messages'
 import { generateIdleAIPhrase } from '@/features/idle/generateIdleAIPhrase'
+import {
+  isPhraseUsed,
+  markPhraseUsed,
+} from '@/features/idle/idleTopicMemory'
 import { isSleepingNow } from '@/features/sleep/sleepStore'
 
 /**
@@ -183,19 +187,24 @@ export function useIdleMode({
     // 発話リストをorder順にソート
     const sortedPhrases = [...idlePhrases].sort((a, b) => a.order - b.order)
 
+    // 今日すでに話したセリフは候補から外す（話題の重複防止）
+    const unusedPhrases = sortedPhrases.filter((p) => !isPhraseUsed(p.text))
+    const pool = unusedPhrases.length > 0 ? unusedPhrases : sortedPhrases
+
     let phrase: IdlePhrase
 
     if (idlePlaybackMode === 'sequential') {
       // 順番モード
-      phrase = sortedPhrases[currentPhraseIndexRef.current]
+      phrase = pool[currentPhraseIndexRef.current % pool.length]
       currentPhraseIndexRef.current =
-        (currentPhraseIndexRef.current + 1) % sortedPhrases.length
+        (currentPhraseIndexRef.current + 1) % pool.length
     } else {
       // ランダムモード
-      const randomIndex = Math.floor(Math.random() * sortedPhrases.length)
-      phrase = sortedPhrases[randomIndex]
+      const randomIndex = Math.floor(Math.random() * pool.length)
+      phrase = pool[randomIndex]
     }
 
+    markPhraseUsed(phrase.text)
     return { text: phrase.text, emotion: phrase.emotion }
   }, [
     idlePhrases,
