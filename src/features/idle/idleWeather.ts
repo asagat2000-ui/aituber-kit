@@ -95,7 +95,10 @@ export function buildPlaceCandidates(place: string): string[] {
   const raw = place.trim()
   if (!raw) return []
 
-  const withoutPref = raw.replace(/^(東京都|北海道|(?:京都|大阪)府|.{2,3}県)/, '')
+  const withoutPref = raw.replace(
+    /^(東京都|北海道|(?:京都|大阪)府|.{2,3}県)/,
+    ''
+  )
   const stripSuffix = (v: string): string => {
     for (const s of ['市', '町', '村', '区']) {
       if (v.length > 1 && v.endsWith(s)) return v.slice(0, -1)
@@ -153,9 +156,9 @@ async function resolveGeo(place: string): Promise<GeoPoint | null> {
     const url =
       'https://geocoding-api.open-meteo.com/v1/search' +
       `?name=${encodeURIComponent(candidate)}&count=1&language=ja&format=json`
-    const json = (await fetchJson(url)) as
-      | { results?: { name: string; latitude: number; longitude: number }[] }
-      | null
+    const json = (await fetchJson(url)) as {
+      results?: { name: string; latitude: number; longitude: number }[]
+    } | null
     const hit = json?.results?.[0]
     if (hit) {
       const point: GeoPoint = {

@@ -134,7 +134,9 @@ export function buildForbiddenBrief(now: Date = new Date()): string {
   if (entries.length === 0) return ''
 
   const labels = Array.from(
-    new Set(entries.map((e) => e.label.trim()).filter((l) => l && l !== 'fixed'))
+    new Set(
+      entries.map((e) => e.label.trim()).filter((l) => l && l !== 'fixed')
+    )
   ).slice(-12)
   const texts = entries
     .filter((e) => e.text)
@@ -143,7 +145,9 @@ export function buildForbiddenBrief(now: Date = new Date()): string {
 
   const lines: string[] = []
   if (labels.length > 0) {
-    lines.push(`今日すでに話した話題（同じ話題は選ばない）: ${labels.join(' / ')}`)
+    lines.push(
+      `今日すでに話した話題（同じ話題は選ばない）: ${labels.join(' / ')}`
+    )
   }
   if (texts.length > 0) {
     lines.push('直近のセリフ（同じ言い回しは使わない）:')
