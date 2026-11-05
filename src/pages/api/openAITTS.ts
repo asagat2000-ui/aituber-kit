@@ -21,7 +21,7 @@ export const GEMINI_ENDPOINT =
   'https://generativelanguage.googleapis.com/v1beta/interactions'
 const CHIRP_ENDPOINT = 'https://texttospeech.googleapis.com/v1/text:synthesize'
 /** デプロイ確認用。診断ページに出るので、反映されたかが一目で分かる */
-export const KIT_PATCH_VERSION = 'p31'
+export const KIT_PATCH_VERSION = 'p32'
 
 /** 実際に送るモデル名。環境変数も定数も参照しない直値。ここが唯一の正 */
 const SENT_MODEL = 'gemini-3.8-flash-lite-tts'
