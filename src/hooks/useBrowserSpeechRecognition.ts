@@ -17,6 +17,11 @@ import homeStore from '@/features/stores/home'
 import { useTranslation } from 'react-i18next'
 import { useSilenceDetection } from './useSilenceDetection'
 import { SpeakQueue } from '@/features/messages/speakQueue'
+import {
+  isMicPermissionGranted,
+  markMicPermissionGranted,
+} from '@/features/voice/micPermission'
+import { updateVoiceDebug } from '@/features/voice/voiceDebugState'
 
 /**
  * ブラウザの音声認識APIを使用するためのカスタムフック
@@ -46,6 +51,9 @@ export function useBrowserSpeechRecognition(
   const recognitionActiveRef = useRef<boolean>(false)
   // ----- 開始処理中かどうかを追跡（排他制御用） -----
   const isStartingRef = useRef<boolean>(false)
+
+  // ----- デバッグ用の再起動回数 -----
+  const restartCountRef = useRef(0)
 
   // ----- 会話モードの無音タイマー -----
   const conversationTimerRef = useRef<NodeJS.Timeout | null>(null)
@@ -230,10 +238,15 @@ export function useBrowserSpeechRecognition(
       return false
     }
 
+    // このセッションで一度許可済みなら、デバイスを開き直さない。
+    // iOS では開くたびに描画が止まり、アバターがカクつく原因になる。
+    if (isMicPermissionGranted()) return true
+
     try {
       // getUserMediaを直接呼び出し、ブラウザのネイティブ許可モーダルを表示
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
       stream.getTracks().forEach((track) => track.stop())
+      markMicPermissionGranted()
       return true
     } catch (error) {
       // ユーザーが明示的に拒否した場合や、その他のエラーの場合
@@ -275,7 +288,8 @@ export function useBrowserSpeechRecognition(
       }
 
       // 既に認識が開始されている場合は、onendイベントを待って停止を確認
-      if (isListeningRef.current) {
+      // ただし自然終了（onend済み）なら待つ必要がない。毎回500ms固まるのを避ける
+      if (isListeningRef.current && recognitionActiveRef.current) {
         await new Promise<void>((resolve) => {
           let timeoutId: NodeJS.Timeout
 
@@ -334,6 +348,7 @@ export function useBrowserSpeechRecognition(
         // リスニング状態を更新
         isListeningRef.current = true
         setIsListening(true)
+        updateVoiceDebug({ mic: true, standby: isWakeStandby(), error: '' })
       } catch (error) {
         logger.error('Error starting recognition:', error)
 
@@ -495,6 +510,12 @@ export function useBrowserSpeechRecognition(
       const transcript = Array.from(event.results)
         .map((result) => result[0].transcript)
         .join('')
+      updateVoiceDebug({
+        mic: true,
+        standby: isWakeStandby(),
+        lastEvent: 'onresult',
+        lastText: transcript.slice(0, 40),
+      })
 
       // 有意な変化があるかチェック
       const isSignificantChange =
@@ -554,6 +575,12 @@ export function useBrowserSpeechRecognition(
       // isListeningRef.currentがtrueの場合は再開
       if (isListeningRef.current) {
         logger.log('Restarting speech recognition...')
+        updateVoiceDebug({
+          mic: false,
+          standby: isWakeStandby(),
+          restarts: (restartCountRef.current += 1),
+          lastEvent: 'onend→再起動',
+        })
         // 再起動タイマーをrefに保存して追跡 (競合状態防止)
         restartTimeoutRef.current = setTimeout(() => {
           // setTimeout実行時に再度状態を確認 (競合状態防止)
@@ -568,6 +595,7 @@ export function useBrowserSpeechRecognition(
     // 音声認識エラー時
     newRecognition.onerror = (event) => {
       logger.error('Speech recognition error:', event.error)
+      updateVoiceDebug({ error: String(event.error), lastEvent: 'onerror' })
 
       // 呼びかけ待ちは「静かなのが正常」。ここで止めるとマイクが落ちる
       if (event.error === 'no-speech' && isWakeStandby()) {

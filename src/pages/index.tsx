@@ -1,6 +1,7 @@
 import { useEffect, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Form } from '@/components/form'
+import VoiceDebug from '@/components/voiceDebug'
 import { VoiceBridge } from '@/features/voice/VoiceBridge'
 import MessageReceiver from '@/components/messageReceiver'
 import { Introduction } from '@/components/introduction'
@@ -132,6 +133,7 @@ const Home = () => {
       <VoiceBridge>
         <Form />
       </VoiceBridge>
+      <VoiceDebug />
       <Menu />
       <ModalImage />
       {(messageReceiverEnabled || externalControlEnabled) && (
