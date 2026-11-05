@@ -12,6 +12,7 @@ import {
   markManualMicOff,
 } from '@/features/voice/autoResumeState'
 import { isSleepingNow } from '@/features/sleep/sleepStore'
+import { isWakeStandby, isWakeModeOn } from '@/features/voice/wakeWord'
 import { useBrowserSpeechRecognition } from './useBrowserSpeechRecognition'
 import { useWhisperRecognition } from './useWhisperRecognition'
 import { useRealtimeVoiceAPI } from './useRealtimeVoiceAPI'
@@ -132,6 +133,20 @@ export function useVoiceRecognition({
     // スリープ時間帯は発話後の自動再開をしない
     if (isSleepingNow()) return
 
+    // ウェイクワード運用中は、待機中でも呼びかけを拾うためマイクを開き直す
+    if (isWakeModeOn()) {
+      setTimeout(() => {
+        if (
+          !homeStore.getState().isSpeaking &&
+          !homeStore.getState().chatProcessing &&
+          !currentHookRef.current.isListening
+        ) {
+          currentHookRef.current.startListening()
+        }
+      }, 300)
+      return
+    }
+
     // 常時マイク入力モードがON: 従来どおり無条件で再開
     if (continuousMicListeningMode) {
       logger.log('🔄 AIの発話が完了しました。音声認識を自動的に再開します。')
@@ -225,7 +240,10 @@ export function useVoiceRecognition({
         return
       }
 
-      if (!settingsStore.getState().continuousMicListeningMode) {
+      if (
+        !settingsStore.getState().continuousMicListeningMode &&
+        !isWakeModeOn()
+      ) {
         return
       }
 

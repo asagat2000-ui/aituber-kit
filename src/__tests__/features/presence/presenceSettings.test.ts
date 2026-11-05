@@ -12,11 +12,7 @@ import { createIdlePhrase } from '@/features/idle/idleTypes'
 const DEFAULT_PRESENCE_SETTINGS = {
   presenceDetectionEnabled: false,
   presenceGreetingPhrases: [
-    createIdlePhrase(
-      'いらっしゃいませ！何かお手伝いできることはありますか？',
-      'happy',
-      0
-    ),
+    createIdlePhrase('あ、だれか来たね。こんにちは！', 'happy', 0),
   ],
   presenceDepartureTimeout: 10,
   presenceCooldownTime: 5,
@@ -70,7 +66,7 @@ describe('Settings Store - Presence Detection Settings', () => {
       const state = settingsStore.getState()
       expect(state.presenceGreetingPhrases.length).toBeGreaterThan(0)
       expect(state.presenceGreetingPhrases[0].text).toBe(
-        'いらっしゃいませ！何かお手伝いできることはありますか？'
+        'あ、だれか来たね。こんにちは！'
       )
       expect(state.presenceGreetingPhrases[0].emotion).toBe('happy')
     })

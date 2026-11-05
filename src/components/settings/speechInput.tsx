@@ -25,6 +25,11 @@ const SpeechInput = () => {
   )
   const initialSpeechTimeout = settingsStore((s) => s.initialSpeechTimeout)
   const afterSpeakAutoResume = settingsStore((s) => s.afterSpeakAutoResume)
+  const wakeWordEnabled = settingsStore((s) => s.wakeWordEnabled)
+  const wakeWordPhrases = settingsStore((s) => s.wakeWordPhrases)
+  const wakeWordConversationTimeout = settingsStore(
+    (s) => s.wakeWordConversationTimeout
+  )
   const liveMode = settingsStore((s) => s.liveMode)
   const realtimeAPIMode = settingsStore((s) => s.realtimeAPIMode)
   const audioMode = settingsStore((s) => s.audioMode)
@@ -264,6 +269,61 @@ const SpeechInput = () => {
                   }
                   testId="after-speak-auto-resume-toggle"
                 />
+              </div>
+              <div className="mt-8 border-t border-gray-200 pt-6">
+                <div className="my-2 text-xl font-bold">{t('WakeWord')}</div>
+                <div className="my-2 text-sm whitespace-pre-wrap">
+                  {t('WakeWordInfo')}
+                </div>
+                <ToggleSwitch
+                  enabled={wakeWordEnabled}
+                  onChange={(v) =>
+                    settingsStore.setState({ wakeWordEnabled: v })
+                  }
+                  testId="wake-word-toggle"
+                />
+                {wakeWordEnabled && (
+                  <div className="mt-6">
+                    <div className="font-bold mb-2">{t('WakeWordPhrases')}</div>
+                    <div className="my-2 text-sm whitespace-pre-wrap">
+                      {t('WakeWordPhrasesInfo')}
+                    </div>
+                    <input
+                      type="text"
+                      value={wakeWordPhrases}
+                      onChange={(e) =>
+                        settingsStore.setState({
+                          wakeWordPhrases: e.target.value,
+                        })
+                      }
+                      data-testid="wake-word-phrases-input"
+                      className="w-full px-4 py-2 bg-white border border-gray-300 rounded-lg"
+                    />
+                    <div className="mt-6 font-bold">
+                      {t('WakeWordConversationTimeout')}:{' '}
+                      {wakeWordConversationTimeout.toFixed(0)}秒
+                    </div>
+                    <div className="my-2 text-sm whitespace-pre-wrap">
+                      {t('WakeWordConversationTimeoutInfo')}
+                    </div>
+                    <input
+                      type="range"
+                      min="5"
+                      max="180"
+                      step="5"
+                      value={wakeWordConversationTimeout}
+                      onChange={(e) =>
+                        settingsStore.setState({
+                          wakeWordConversationTimeout: parseFloat(
+                            e.target.value
+                          ),
+                        })
+                      }
+                      data-testid="wake-word-conversation-timeout-input"
+                      className="mt-2 mb-4 input-range"
+                    />
+                  </div>
+                )}
               </div>
             </div>
           )}

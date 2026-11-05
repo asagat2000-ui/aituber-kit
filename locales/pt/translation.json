@@ -967,5 +967,11 @@
   "SleepTimeRangeInfo": "If the start is later than the end, the window runs overnight (e.g. 23:00-06:00). If start and end are the same, the feature is disabled.",
   "SleepScreenDim": "Dim the screen during sleep hours",
   "SleepScreenDimInfo": "While dimmed, tap the screen to wake up. Once awake, it stays awake until the next sleep start time.",
-  "SleepTapToWake": "Tap to wake"
+  "SleepTapToWake": "Tap to wake",
+  "WakeWord": "Start talking by calling the character",
+  "WakeWordInfo": "The microphone stays on, but talk only starts when you say the wake word. Once the conversation starts, you can keep talking without calling again. If nothing is said for the seconds below, the conversation ends and it waits for the wake word again.",
+  "WakeWordPhrases": "Wake words",
+  "WakeWordPhrasesInfo": "Separate multiple words with commas. Very short words are more likely to trigger on TV or background noise.",
+  "WakeWordConversationTimeout": "Silence before ending the conversation",
+  "WakeWordConversationTimeoutInfo": "After this many seconds without speech, the conversation ends and it waits for the wake word again."
 }

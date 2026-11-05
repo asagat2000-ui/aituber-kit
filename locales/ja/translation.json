@@ -796,7 +796,7 @@
   "IdleModeEnabledInfo": "来場者との会話がない時間が続くと、キャラクターが自動的に定期発話を行います。展示会やデジタルサイネージでの無人運用に便利です。",
   "IdleModeDisabledInfo": "リアルタイムAPIモード、オーディオモード、外部連携モード、またはスライドモードが有効な場合、アイドルモードは使用できません。",
   "IdleInterval": "発話間隔",
-  "IdleIntervalInfo": "最後の会話から次の自動発話までの時間を設定します（{{min}}〜{{max}}秒）。",
+  "IdleIntervalInfo": "アイドルモードで自動発話する間隔を秒で指定します（{{min}}〜{{max}}秒＝最大60分）。長くするほど発話回数が減り、API利用料も抑えられます。",
   "IdleSpeechSource": "発話ソース",
   "IdleSpeechSourceInfo": "アイドル時の発話方法を選択します。",
   "IdleSpeechSourcePhraseList": "発話リスト",
@@ -967,5 +967,11 @@
   "SleepTimeRangeInfo": "開始が終了より遅い場合は翌日まで（例: 23:00〜06:00）。開始と終了が同じ時刻のときは無効です。",
   "SleepScreenDim": "スリープ中は画面を暗くする",
   "SleepScreenDimInfo": "暗くしている間は、画面をタップすると起きます。一度起きると、次のスリープ開始時刻までは起きたままです。",
-  "SleepTapToWake": "タップで起きます"
+  "SleepTapToWake": "タップで起きます",
+  "WakeWord": "呼びかけで会話を始める",
+  "WakeWordInfo": "マイクは開いたままにして、決め言葉を言われたときだけ会話を始めます。会話が始まったあとは、呼びかけなしで続けて話せます。下の秒数だけ無言が続くと会話を終了し、また呼びかけ待ちに戻ります。",
+  "WakeWordPhrases": "決め言葉",
+  "WakeWordPhrasesInfo": "複数あるときはカンマ（,）で区切ります。短い言葉だけにすると、テレビや物音で誤って反応しやすくなります。",
+  "WakeWordConversationTimeout": "会話を終える無音時間",
+  "WakeWordConversationTimeoutInfo": "この秒数だけ話しかけられないと会話を終了し、呼びかけ待ちに戻ります。"
 }

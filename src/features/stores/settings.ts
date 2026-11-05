@@ -1,4 +1,8 @@
 import { isDemoMode, restrictDemoVoiceSettings } from '@/utils/demoMode'
+import {
+  KOHARU_IDLE_PROMPT,
+  KOHARU_SYSTEM_PROMPT,
+} from '@/features/prompts/koharu'
 import { computeExclusions } from './exclusionEngine'
 import {
   DEFAULT_LIVE_BACKEND,
@@ -297,6 +301,12 @@ interface General {
   sleepEndTime: string
   /** スリープ中に画面を暗転する */
   sleepScreenDim: boolean
+  /** ウェイクワードで会話を開始する */
+  wakeWordEnabled: boolean
+  /** 決め言葉（カンマ区切りで複数可） */
+  wakeWordPhrases: string
+  /** 会話モードを終えるまでの無音秒数 */
+  wakeWordConversationTimeout: number
   presetQuestions: PresetQuestion[]
   showPresetQuestions: boolean
   speechRecognitionMode: SpeechRecognitionMode
@@ -557,10 +567,7 @@ const getInitialValuesFromEnv = (): SettingsState => ({
       : 'bubble',
   showCharacterName:
     process.env.NEXT_PUBLIC_SHOW_CHARACTER_NAME === 'true' ? true : false,
-  systemPrompt:
-    process.env.NEXT_PUBLIC_SYSTEM_PROMPT ||
-    process.env.NEXT_PUBLIC_CHARACTER_PRESET1 ||
-    '',
+  systemPrompt: process.env.NEXT_PUBLIC_SYSTEM_PROMPT || KOHARU_SYSTEM_PROMPT,
   selectedVrmPath:
     process.env.NEXT_PUBLIC_SELECTED_VRM_PATH || '/vrm/nikechan_v1.vrm',
   selectedLive2DPath:
@@ -669,7 +676,7 @@ const getInitialValuesFromEnv = (): SettingsState => ({
   maxReplySentences:
     process.env.NEXT_PUBLIC_MAX_REPLY_SENTENCES !== undefined
       ? parseInt(process.env.NEXT_PUBLIC_MAX_REPLY_SENTENCES) || 0
-      : 3,
+      : 2,
   reasoningMode: process.env.NEXT_PUBLIC_REASONING_MODE === 'true',
   reasoningEffort:
     (process.env.NEXT_PUBLIC_REASONING_EFFORT as ReasoningEffort) || 'medium',
@@ -688,6 +695,12 @@ const getInitialValuesFromEnv = (): SettingsState => ({
   sleepStartTime: process.env.NEXT_PUBLIC_SLEEP_START_TIME || '23:00',
   sleepEndTime: process.env.NEXT_PUBLIC_SLEEP_END_TIME || '06:00',
   sleepScreenDim: process.env.NEXT_PUBLIC_SLEEP_SCREEN_DIM !== 'false',
+  wakeWordEnabled: process.env.NEXT_PUBLIC_WAKE_WORD_ENABLED === 'true',
+  wakeWordPhrases: process.env.NEXT_PUBLIC_WAKE_WORD_PHRASES || 'ねえ、こはる',
+  wakeWordConversationTimeout:
+    parseFloat(
+      process.env.NEXT_PUBLIC_WAKE_WORD_CONVERSATION_TIMEOUT || '30'
+    ) || 30,
   presetQuestions: (
     process.env.NEXT_PUBLIC_PRESET_QUESTIONS?.split(',') || []
   ).map((text, index) => ({
@@ -810,7 +823,7 @@ const getInitialValuesFromEnv = (): SettingsState => ({
   presenceGreetingPhrases: (() => {
     const msg =
       process.env.NEXT_PUBLIC_PRESENCE_GREETING_MESSAGE ||
-      'いらっしゃいませ！何かお手伝いできることはありますか？'
+      'あ、だれか来たね。こんにちは！'
     return [createIdlePhrase(msg, 'happy', 0)]
   })(),
   presenceDepartureTimeout:
@@ -873,7 +886,8 @@ const getInitialValuesFromEnv = (): SettingsState => ({
   idleAiGenerationEnabled:
     process.env.NEXT_PUBLIC_IDLE_AI_GENERATION_ENABLED === 'true' ||
     DEFAULT_IDLE_CONFIG.idleAiGenerationEnabled,
-  idleAiPromptTemplate: process.env.NEXT_PUBLIC_IDLE_AI_PROMPT_TEMPLATE || '',
+  idleAiPromptTemplate:
+    process.env.NEXT_PUBLIC_IDLE_AI_PROMPT_TEMPLATE || KOHARU_IDLE_PROMPT,
 
   // Kiosk mode settings
   kioskModeEnabled:
@@ -1098,6 +1112,41 @@ const settingsMigrationSteps: Record<number, SettingsMigrationStep> = {
     if (typeof migrated.selectAIModel === 'string') {
       migrated.selectAIModel = migrateOpenAIModelName(migrated.selectAIModel)
     }
+    return migrated
+  },
+  9: (state) => {
+    const migrated = { ...state }
+
+    // こはるの人格（character-spec v3）へ移行する。
+    // 利用者が自分で書き換えている場合は上書きしない。
+    const prompt = migrated.systemPrompt
+    if (
+      typeof prompt !== 'string' ||
+      prompt.trim() === '' ||
+      prompt.includes('あなたはこれからuserと仲の良い1人')
+    ) {
+      migrated.systemPrompt = KOHARU_SYSTEM_PROMPT
+    }
+
+    const idlePrompt = migrated.idleAiPromptTemplate
+    if (
+      typeof idlePrompt !== 'string' ||
+      idlePrompt.trim() === '' ||
+      idlePrompt.includes('昔の遊び')
+    ) {
+      migrated.idleAiPromptTemplate = KOHARU_IDLE_PROMPT
+    }
+
+    // 長さは2文に統一する（旧既定の3文から移行）
+    if (migrated.maxReplySentences === 3) {
+      migrated.maxReplySentences = 2
+    }
+
+    // 高齢者との会話では、考えてから話す待ち時間が負になるため切る
+    if (migrated.reasoningMode === true) {
+      migrated.reasoningMode = false
+    }
+
     return migrated
   },
 }
@@ -1342,6 +1391,9 @@ export const selectPersistedSettings = (state: SettingsState) => ({
   sleepStartTime: state.sleepStartTime,
   sleepEndTime: state.sleepEndTime,
   sleepScreenDim: state.sleepScreenDim,
+  wakeWordEnabled: state.wakeWordEnabled,
+  wakeWordPhrases: state.wakeWordPhrases,
+  wakeWordConversationTimeout: state.wakeWordConversationTimeout,
   presetQuestions: state.presetQuestions,
   showPresetQuestions: state.showPresetQuestions,
   speechRecognitionMode: state.speechRecognitionMode,

@@ -3,6 +3,12 @@ import {
   clearAutoResumeSession,
   isAutoResumeSession,
 } from '@/features/voice/autoResumeState'
+import {
+  containsWakePhrase,
+  enterConversation,
+  isWakeStandby,
+  setWakeStandby,
+} from '@/features/voice/wakeWord'
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { getVoiceLanguageCode } from '@/utils/voiceLanguage'
 import settingsStore from '@/features/stores/settings'
@@ -41,6 +47,9 @@ export function useBrowserSpeechRecognition(
   // ----- 開始処理中かどうかを追跡（排他制御用） -----
   const isStartingRef = useRef<boolean>(false)
 
+  // ----- 会話モードの無音タイマー -----
+  const conversationTimerRef = useRef<NodeJS.Timeout | null>(null)
+
   // ----- キーボードトリガー関連 -----
   const keyPressStartTime = useRef<number | null>(null)
   const isKeyboardTriggered = useRef(false)
@@ -53,7 +62,11 @@ export function useBrowserSpeechRecognition(
     updateSpeechTimestamp,
     isSpeechEnded,
   } = useSilenceDetection({
-    onTextDetected: onChatProcessStart,
+    onTextDetected: (text: string) => {
+      // 待機中（呼びかけ待ち）は勝手に送信しない
+      if (isWakeStandby()) return
+      onChatProcessStart(text)
+    },
     transcriptRef,
     setUserMessage,
     speechDetectedRef,
@@ -79,6 +92,15 @@ export function useBrowserSpeechRecognition(
       // 自動再開が設定時間を過ぎただけの場合はトーストを出さず静かに終了する
       const wasAutoResume = isAutoResumeSession()
       clearAutoResumeSession()
+
+      // 待機中は無音が普通なので、常時マイクをOFFにせず静かに再開する
+      if (isWakeStandby()) {
+        logger.log(
+          '🌙 ウェイクワード待機中のため、常時マイク設定は変更しません。'
+        )
+        clearSilenceDetection()
+        return
+      }
 
       // 常時マイク入力モードをオフに設定
       if (settingsStore.getState().continuousMicListeningMode) {
@@ -119,6 +141,32 @@ export function useBrowserSpeechRecognition(
     [initialSpeechTimeout, clearInitialSpeechCheckTimer, handleNoSpeechTimeout]
   )
 
+  // ----- 会話モードを終える無音タイマー -----
+  const clearConversationTimer = useCallback(() => {
+    if (conversationTimerRef.current) {
+      clearTimeout(conversationTimerRef.current)
+      conversationTimerRef.current = null
+    }
+  }, [])
+
+  const armConversationTimer = useCallback(() => {
+    clearConversationTimer()
+    const settings = settingsStore.getState()
+    if (!settings.wakeWordEnabled) return
+    if (isWakeStandby()) return
+
+    const seconds = settings.wakeWordConversationTimeout
+    if (!(seconds > 0)) return
+
+    conversationTimerRef.current = setTimeout(() => {
+      logger.log('🌙 会話モードの無音タイムアウト。呼びかけ待ちに戻ります。')
+      setWakeStandby(true)
+      transcriptRef.current = ''
+      setUserMessage('')
+      speechDetectedRef.current = false
+    }, seconds * 1000)
+  }, [clearConversationTimer])
+
   // ----- 音声認識停止処理 -----
   const stopListening = useCallback(async () => {
     // 保留中の再起動タイマーをキャンセル (競合状態防止)
@@ -130,6 +178,7 @@ export function useBrowserSpeechRecognition(
     // 各種タイマーをクリア
     clearSilenceDetection()
     clearInitialSpeechCheckTimer()
+    clearConversationTimer()
 
     // リスニング状態を更新
     isListeningRef.current = false
@@ -159,6 +208,7 @@ export function useBrowserSpeechRecognition(
   }, [
     clearSilenceDetection,
     clearInitialSpeechCheckTimer,
+    clearConversationTimer,
     recognition,
     isSpeechEnded,
     onChatProcessStart,
@@ -447,9 +497,28 @@ export function useBrowserSpeechRecognition(
         transcript.trim().length > lastTranscriptLength
       lastTranscriptLength = transcript.trim().length
 
+      // 待機中は「呼びかけ」だけを見る。会話は始めない
+      if (isWakeStandby()) {
+        const phrases = settingsStore.getState().wakeWordPhrases
+        if (containsWakePhrase(transcript, phrases)) {
+          logger.log('🌞 呼びかけを検出しました。会話を開始します。')
+          enterConversation()
+          transcriptRef.current = ''
+          setUserMessage('')
+          updateSpeechTimestamp()
+          speechDetectedRef.current = true
+          return
+        }
+        // 呼びかけ以外は表示もしない・保持もしない
+        transcriptRef.current = ''
+        setUserMessage('')
+        return
+      }
+
       if (isSignificantChange) {
         logger.log('🎤 有意な音声を検出しました（トランスクリプト変更あり）')
         updateSpeechTimestamp()
+        armConversationTimer()
         speechDetectedRef.current = true
         // 発話を検知したので自動再開セッションは終了
         clearAutoResumeSession()
@@ -523,6 +592,7 @@ export function useBrowserSpeechRecognition(
           isListeningRef.current &&
           !homeStore.getState().chatProcessing &&
           (settingsStore.getState().continuousMicListeningMode ||
+            settingsStore.getState().wakeWordEnabled ||
             isKeyboardTriggered.current)
         ) {
           logger.log('No speech detected, will restart via onend handler...')

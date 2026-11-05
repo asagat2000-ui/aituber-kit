@@ -1,4 +1,5 @@
 import { logger } from '@/lib/logger'
+import { isWakeStandby } from '@/features/voice/wakeWord'
 import { useState, useCallback, useRef, MutableRefObject } from 'react'
 import settingsStore from '@/features/stores/settings'
 import toastStore from '@/features/stores/toast'
@@ -85,7 +86,9 @@ export function useSilenceDetection({
           initialSpeechTimeout > 0 &&
           silenceDuration >= initialSpeechTimeout * 1000 &&
           !speechEndedRef.current &&
-          !speechDetectedRef.current
+          !speechDetectedRef.current &&
+          // ウェイクワード待機中は無音が普通なので停止しない
+          !isWakeStandby()
         ) {
           logger.log(
             `⏱️ ${silenceDuration}ms の長時間無音を検出しました。音声認識を停止します。`
@@ -130,6 +133,7 @@ export function useSilenceDetection({
         }
         // 無音状態が設定値以上続いたかつテキストがある場合は自動送信
         else if (
+          !isWakeStandby() &&
           settingsStore.getState().noSpeechTimeout > 0 &&
           silenceDuration >= noSpeechTimeoutMs &&
           !speechEndedRef.current

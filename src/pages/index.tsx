@@ -1,6 +1,7 @@
 import { useEffect, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Form } from '@/components/form'
+import { TapToStart } from '@/components/tapToStart'
 import MessageReceiver from '@/components/messageReceiver'
 import { Introduction } from '@/components/introduction'
 import { Menu } from '@/components/menu'
@@ -129,6 +130,7 @@ const Home = () => {
         <VrmViewer />
       )}
       <Form />
+      <TapToStart />
       <Menu />
       <ModalImage />
       {(messageReceiverEnabled || externalControlEnabled) && (
