@@ -13,6 +13,10 @@ import {
 } from '@/features/voice/autoResumeState'
 import { isSleepingNow } from '@/features/sleep/sleepStore'
 import { isWakeStandby, isWakeModeOn } from '@/features/voice/wakeWord'
+import {
+  shouldWatchdogRestart,
+  shouldWatchdogStart,
+} from '@/features/voice/restartPolicy'
 import { useBrowserSpeechRecognition } from './useBrowserSpeechRecognition'
 import { useWhisperRecognition } from './useWhisperRecognition'
 import { useRealtimeVoiceAPI } from './useRealtimeVoiceAPI'
@@ -261,8 +265,20 @@ export function useVoiceRecognition({
       const checkRecognitionActive =
         currentHookRef.current.checkRecognitionActive
 
+      // 判断は restartPolicy に集約（再起動の予約中は叩き直さない）
+      const restartPending =
+        currentHookRef.current.isRestartPending?.() ?? false
+      const decisionInput = {
+        isListening,
+        isSpeaking,
+        isProcessing: chatProcessing,
+        isRecognitionActive: Boolean(checkRecognitionActive?.()),
+        isRestartPending: restartPending,
+        isSleeping: false,
+      }
+
       // マイクがOFFで、発話中でも処理中でもない場合は再開
-      if (!isListening && !isSpeaking && !chatProcessing) {
+      if (shouldWatchdogStart(decisionInput)) {
         logger.log(
           '🔄 常時マイク入力モード: マイクがOFFになっていたため、自動で再開します。'
         )
@@ -273,14 +289,8 @@ export function useVoiceRecognition({
       // isListeningがtrueでも、実際にアクティブでない場合は再起動
       // すでに onend からの再起動待ちなら、二重に叩き直さない。
       // ここを見ないと「停止→100ms→開始」が1秒ごとに走り、動きが止まる
-      if (
-        isListening &&
-        !isSpeaking &&
-        !chatProcessing &&
-        checkRecognitionActive &&
-        !currentHookRef.current.isRestartPending?.()
-      ) {
-        if (!checkRecognitionActive()) {
+      if (isListening && shouldWatchdogRestart(decisionInput)) {
+        if (!decisionInput.isRecognitionActive) {
           logger.log(
             '🔄 常時マイク入力モード: 音声認識が非アクティブのため再起動します。'
           )

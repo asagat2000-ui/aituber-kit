@@ -22,6 +22,11 @@ import {
   markMicPermissionGranted,
 } from '@/features/voice/micPermission'
 import { updateVoiceDebug } from '@/features/voice/voiceDebugState'
+import {
+  nextRestartDelay,
+  shouldArmNoSpeechTimer,
+  shouldStopOnNoSpeech,
+} from '@/features/voice/noSpeechPolicy'
 
 /**
  * ブラウザの音声認識APIを使用するためのカスタムフック
@@ -91,6 +96,21 @@ export function useBrowserSpeechRecognition(
   // ----- 音声未検出時の停止処理を実行する共通関数 (Requirement 5.1) -----
   const handleNoSpeechTimeout = useCallback(
     async (stopListeningFn: () => Promise<void>) => {
+      const continuousNow = settingsStore.getState().continuousMicListeningMode
+
+      // 常時マイクは「開いたまま」が約束。ここで止めると以後ずっと無反応になる
+      if (
+        !shouldStopOnNoSpeech({
+          continuousMicListeningMode: continuousNow,
+          wakeStandby: isWakeStandby(),
+          initialSpeechTimeout,
+        })
+      ) {
+        logger.log('🎙️ 常時マイクのため、無音では停止しません。')
+        clearInitialSpeechCheckTimer()
+        return
+      }
+
       logger.log(
         `⏱️ ${initialSpeechTimeout}秒間音声が検出されませんでした。音声認識を停止します。`
       )
@@ -140,7 +160,14 @@ export function useBrowserSpeechRecognition(
 
       // 呼びかけ待ちの間は無音が普通なので、初期無音タイマーを張らない。
       // 張ると5秒ごとにマイクが落ち、触るたびに再開する往復が起きる。
-      if (initialSpeechTimeout > 0 && !isWakeStandby()) {
+      const continuous = settingsStore.getState().continuousMicListeningMode
+      if (
+        shouldArmNoSpeechTimer({
+          continuousMicListeningMode: continuous,
+          wakeStandby: isWakeStandby(),
+          initialSpeechTimeout,
+        })
+      ) {
         initialSpeechCheckTimerRef.current = setTimeout(() => {
           if (!speechDetectedRef.current && isListeningRef.current) {
             handleNoSpeechTimeout(stopListeningFn)
@@ -588,7 +615,7 @@ export function useBrowserSpeechRecognition(
             startListening()
           }
           restartTimeoutRef.current = null
-        }, 1000)
+        }, nextRestartDelay(settingsStore.getState().continuousMicListeningMode))
       }
     }
 
