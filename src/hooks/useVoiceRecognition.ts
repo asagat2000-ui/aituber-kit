@@ -81,6 +81,10 @@ export function useVoiceRecognition({
       'checkRecognitionActive' in currentHook
         ? (currentHook as any).checkRecognitionActive
         : null,
+    isRestartPending:
+      'isRestartPending' in currentHook
+        ? (currentHook as any).isRestartPending
+        : null,
   })
   const voiceInputShortcutRef = useRef(voiceInputShortcut)
   const activeVoiceShortcutRef = useRef<string | null>(null)
@@ -98,6 +102,10 @@ export function useVoiceRecognition({
       checkRecognitionActive:
         'checkRecognitionActive' in currentHook
           ? (currentHook as any).checkRecognitionActive
+          : null,
+      isRestartPending:
+        'isRestartPending' in currentHook
+          ? (currentHook as any).isRestartPending
           : null,
     }
   }, [currentHook])
@@ -263,11 +271,14 @@ export function useVoiceRecognition({
       }
 
       // isListeningがtrueでも、実際にアクティブでない場合は再起動
+      // すでに onend からの再起動待ちなら、二重に叩き直さない。
+      // ここを見ないと「停止→100ms→開始」が1秒ごとに走り、動きが止まる
       if (
         isListening &&
         !isSpeaking &&
         !chatProcessing &&
-        checkRecognitionActive
+        checkRecognitionActive &&
+        !currentHookRef.current.isRestartPending?.()
       ) {
         if (!checkRecognitionActive()) {
           logger.log(

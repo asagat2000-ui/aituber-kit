@@ -695,6 +695,13 @@ export function useBrowserSpeechRecognition(
     return recognitionActiveRef.current
   }, [])
 
+  // onend からの再起動待ちかどうか。
+  // 待っている間に外から二重に再起動すると、1秒ごとに叩き直す往復になる
+  const isRestartPending = useCallback(
+    () => restartTimeoutRef.current !== null,
+    []
+  )
+
   // 戻り値オブジェクトをメモ化（Requirement 1.1, 1.4）
   const returnValue = useMemo(
     () => ({
@@ -707,6 +714,7 @@ export function useBrowserSpeechRecognition(
       startListening,
       stopListening,
       checkRecognitionActive,
+      isRestartPending,
     }),
     [
       userMessage,

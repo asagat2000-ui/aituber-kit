@@ -1149,6 +1149,15 @@ const settingsMigrationSteps: Record<number, SettingsMigrationStep> = {
 
     return migrated
   },
+  // 10: 呼びかけ機能を一度だけOFFに戻す。
+  // 待機中は呼びかけ以外の言葉をすべて捨てる仕様のため、
+  // 話しかけても反応しない状態になっていた。
+  // 使いたい場合は設定画面でONに戻せる。
+  10: (state) => {
+    const migrated = { ...state }
+    migrated.wakeWordEnabled = false
+    return migrated
+  },
 }
 
 export const CURRENT_SETTINGS_VERSION = Object.keys(
