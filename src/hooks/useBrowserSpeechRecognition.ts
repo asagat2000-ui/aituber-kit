@@ -130,12 +130,6 @@ export function useBrowserSpeechRecognition(
         return
       }
 
-      // 常時マイク入力モードをオフに設定
-      if (settingsStore.getState().continuousMicListeningMode) {
-        logger.log('🔇 音声未検出により常時マイク入力モードをOFFに設定します。')
-        settingsStore.setState({ continuousMicListeningMode: false })
-      }
-
       if (wasAutoResume) {
         logger.log(
           '🔇 発話後の自動再開が設定時間を過ぎたため、音声認識を停止しました。'
@@ -371,6 +365,7 @@ export function useBrowserSpeechRecognition(
         }
 
         recognition.start()
+        settleUntilRef.current = Date.now() + 1500
         logger.log('Recognition started successfully')
         // リスニング状態を更新
         isListeningRef.current = true
@@ -729,6 +724,10 @@ export function useBrowserSpeechRecognition(
     []
   )
 
+  // 開始直後の揺らぎで「止まった」と誤判定しないための猶予
+  const settleUntilRef = useRef(0)
+  const isSettling = useCallback(() => Date.now() < settleUntilRef.current, [])
+
   // 戻り値オブジェクトをメモ化（Requirement 1.1, 1.4）
   const returnValue = useMemo(
     () => ({
@@ -742,6 +741,7 @@ export function useBrowserSpeechRecognition(
       stopListening,
       checkRecognitionActive,
       isRestartPending,
+      isSettling,
     }),
     [
       userMessage,

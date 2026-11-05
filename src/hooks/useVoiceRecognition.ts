@@ -89,6 +89,8 @@ export function useVoiceRecognition({
       'isRestartPending' in currentHook
         ? (currentHook as any).isRestartPending
         : null,
+    isSettling:
+      'isSettling' in currentHook ? (currentHook as any).isSettling : null,
   })
   const voiceInputShortcutRef = useRef(voiceInputShortcut)
   const activeVoiceShortcutRef = useRef<string | null>(null)
@@ -111,6 +113,8 @@ export function useVoiceRecognition({
         'isRestartPending' in currentHook
           ? (currentHook as any).isRestartPending
           : null,
+      isSettling:
+        'isSettling' in currentHook ? (currentHook as any).isSettling : null,
     }
   }, [currentHook])
 
@@ -278,7 +282,7 @@ export function useVoiceRecognition({
       }
 
       // マイクがOFFで、発話中でも処理中でもない場合は再開
-      if (shouldWatchdogStart(decisionInput)) {
+      if (shouldWatchdogStart(decisionInput) && !restartPending) {
         logger.log(
           '🔄 常時マイク入力モード: マイクがOFFになっていたため、自動で再開します。'
         )

@@ -197,10 +197,11 @@ describe('useSilenceDetection', () => {
       })
 
       // 初期発話タイムアウトを設定
+      // 常時マイクOFFのときは従来どおり止まる（このテストの対象）
       ;(settingsStore.getState as jest.Mock).mockReturnValue({
         noSpeechTimeout: 2,
         initialSpeechTimeout: 3,
-        continuousMicListeningMode: true,
+        continuousMicListeningMode: false,
       })
 
       const { result } = renderHook(() => useSilenceDetection(defaultProps))
@@ -255,6 +256,32 @@ describe('useSilenceDetection', () => {
 
       // インターバルがクリアされているため、stopListeningは呼ばれない
       expect(mockStopListening).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('常時マイク入力モード', () => {
+    it('ONなら長時間無音でも停止せず、設定も書き換えない', async () => {
+      const mockStopListening = jest.fn().mockResolvedValue(undefined)
+      ;(settingsStore.getState as jest.Mock).mockReturnValue({
+        noSpeechTimeout: 2,
+        initialSpeechTimeout: 3,
+        continuousMicListeningMode: true,
+      })
+
+      const { result } = renderHook(() => useSilenceDetection(defaultProps))
+      mockSpeechDetectedRef.current = false
+
+      act(() => {
+        result.current.startSilenceDetection(mockStopListening)
+      })
+      act(() => {
+        jest.advanceTimersByTime(5000)
+      })
+
+      expect(mockStopListening).not.toHaveBeenCalled()
+      expect(settingsStore.setState).not.toHaveBeenCalledWith(
+        expect.objectContaining({ continuousMicListeningMode: false })
+      )
     })
   })
 })
