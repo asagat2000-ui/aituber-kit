@@ -130,7 +130,9 @@ export function useBrowserSpeechRecognition(
       // 既存のタイマーをクリアしてから新しいタイマーを設定 (Requirement 5.2)
       clearInitialSpeechCheckTimer()
 
-      if (initialSpeechTimeout > 0) {
+      // 呼びかけ待ちの間は無音が普通なので、初期無音タイマーを張らない。
+      // 張ると5秒ごとにマイクが落ち、触るたびに再開する往復が起きる。
+      if (initialSpeechTimeout > 0 && !isWakeStandby()) {
         initialSpeechCheckTimerRef.current = setTimeout(() => {
           if (!speechDetectedRef.current && isListeningRef.current) {
             handleNoSpeechTimeout(stopListeningFn)
@@ -161,6 +163,8 @@ export function useBrowserSpeechRecognition(
     conversationTimerRef.current = setTimeout(() => {
       logger.log('🌙 会話モードの無音タイムアウト。呼びかけ待ちに戻ります。')
       setWakeStandby(true)
+      clearInitialSpeechCheckTimer()
+      clearSilenceDetection()
       transcriptRef.current = ''
       setUserMessage('')
       speechDetectedRef.current = false
@@ -564,6 +568,13 @@ export function useBrowserSpeechRecognition(
     // 音声認識エラー時
     newRecognition.onerror = (event) => {
       logger.error('Speech recognition error:', event.error)
+
+      // 呼びかけ待ちは「静かなのが正常」。ここで止めるとマイクが落ちる
+      if (event.error === 'no-speech' && isWakeStandby()) {
+        clearSilenceDetection()
+        clearInitialSpeechCheckTimer()
+        return
+      }
 
       // no-speechエラーの場合
       if (event.error === 'no-speech' && isListeningRef.current) {
