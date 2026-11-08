@@ -1175,6 +1175,15 @@ const settingsMigrationSteps: Record<number, SettingsMigrationStep> = {
     migrated.continuousMicListeningMode = true
     return migrated
   },
+  // 13: 12 を適用済みの端末も救済する。
+  // 12 を通した後に無音タイマーが false を保存していたため、
+  // 12 だけでは常時マイクが戻らなかった。
+  13: (state) => {
+    const migrated = { ...state }
+    migrated.wakeWordEnabled = false
+    migrated.continuousMicListeningMode = true
+    return migrated
+  },
 }
 
 export const CURRENT_SETTINGS_VERSION = Object.keys(

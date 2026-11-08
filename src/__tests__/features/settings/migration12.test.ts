@@ -27,8 +27,8 @@ describe('移行ステップ12', () => {
     expect(out.continuousMicListeningMode).toBe(true)
   })
 
-  it('最新版の番号が12になっている', () => {
-    expect(CURRENT_SETTINGS_VERSION).toBe(12)
+  it('最新版の番号は12以降（13で救済済み）', () => {
+    expect(CURRENT_SETTINGS_VERSION).toBeGreaterThanOrEqual(12)
   })
 
   it('11でONにした呼びかけを、12が必ず打ち消す', () => {
