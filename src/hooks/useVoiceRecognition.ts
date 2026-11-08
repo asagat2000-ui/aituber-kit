@@ -1,6 +1,7 @@
 import { logger } from '@/lib/logger'
 import { useEffect, useCallback, useRef } from 'react'
 import { useIsomorphicLayoutEffect } from './useIsomorphicLayoutEffect'
+import { shouldAutoStartMic } from '@/features/voice/autoStartGate'
 import settingsStore from '@/features/stores/settings'
 import homeStore from '@/features/stores/home'
 import { SpeakQueue } from '@/features/messages/speakQueue'
@@ -192,12 +193,14 @@ export function useVoiceRecognition({
   // 常時マイク入力モードの変更を監視
   useEffect(() => {
     if (
-      continuousMicListeningMode &&
-      !currentHookRef.current.isListening &&
-      speechRecognitionMode === 'browser' &&
-      !homeStore.getState().isSpeaking &&
-      !homeStore.getState().chatProcessing &&
-      !isSleepingNow()
+      shouldAutoStartMic({
+        continuousMicListeningMode,
+        speechRecognitionMode,
+        isListening: currentHookRef.current.isListening,
+        isSpeaking: homeStore.getState().isSpeaking,
+        chatProcessing: homeStore.getState().chatProcessing,
+        sleeping: isSleepingNow(),
+      })
     ) {
       // 常時マイク入力モードがONになった場合、自動的にマイク入力を開始
       logger.log(
@@ -206,6 +209,41 @@ export function useVoiceRecognition({
       currentHookRef.current.startListening()
     }
   }, [continuousMicListeningMode, speechRecognitionMode])
+
+  // p45: 最初の操作（タップ・キー入力）でマイクを開く。
+  // スマートフォンのブラウザは、マイクを開くのに操作を要求する場合がある。
+  // 起動直後は開けないが、一度触れば以後はこのEffectが受け止める。
+  useEffect(() => {
+    if (speechRecognitionMode !== 'browser') return
+
+    const startOnGesture = () => {
+      if (
+        !shouldAutoStartMic({
+          continuousMicListeningMode:
+            settingsStore.getState().continuousMicListeningMode,
+          speechRecognitionMode,
+          isListening: currentHookRef.current.isListening,
+          isSpeaking: homeStore.getState().isSpeaking,
+          chatProcessing: homeStore.getState().chatProcessing,
+          sleeping: isSleepingNow(),
+        })
+      ) {
+        return
+      }
+      logger.log('👆 操作を検出しました。常時マイク入力を開始します。')
+      currentHookRef.current.startListening()
+    }
+
+    const events = ['pointerdown', 'keydown', 'touchstart'] as const
+    events.forEach((name) =>
+      document.addEventListener(name, startOnGesture, { passive: true })
+    )
+    return () => {
+      events.forEach((name) =>
+        document.removeEventListener(name, startOnGesture)
+      )
+    }
+  }, [speechRecognitionMode])
 
   // ----- 常時マイク入力モードの定期チェック -----
   // マイクがOFFになっていたら自動でONに戻す
