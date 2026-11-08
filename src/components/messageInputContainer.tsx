@@ -1,4 +1,4 @@
-import { passWakeGate } from '@/features/voice/wakeGate'
+import { useWakeGate } from '@/features/voice/useWakeGate'
 import { LiveConversation } from './liveConversation'
 import { useEffect } from 'react'
 import { MessageInput } from '@/components/messageInput'
@@ -32,6 +32,8 @@ const StandardMessageInputContainer = ({
   const speechRecognitionMode = settingsStore((s) => s.speechRecognitionMode)
 
   // 音声認識フックを使用
+  const gatedOnChatProcessStart = useWakeGate(onChatProcessStart)
+
   const {
     userMessage,
     isListening,
@@ -43,11 +45,8 @@ const StandardMessageInputContainer = ({
     startListening,
     stopListening,
   } = useVoiceRecognition({
-    onChatProcessStart: (text: string) => {
-      // 呼びかけの関所。通ったものだけ送る。マイクには触れない
-      if (!passWakeGate(text)) return
-      onChatProcessStart(text)
-    },
+    // 同一性が変わらない関数を渡す。変えるとマイクが定まらない
+    onChatProcessStart: gatedOnChatProcessStart,
   })
 
   // 常時マイク入力モードの切り替え
