@@ -100,13 +100,8 @@ export function useSilenceDetection({
             silenceCheckInterval.current = null
           }
 
-          // 常時マイク入力モードをOFFに設定
-          if (settingsStore.getState().continuousMicListeningMode) {
-            logger.log(
-              '🔇 長時間無音検出により常時マイク入力モードをOFFに設定します。'
-            )
-            settingsStore.setState({ continuousMicListeningMode: false })
-          }
+          // p44: 長時間無音でも設定はOFFにしない。
+          // 停止と送信はこのまま行い、設定（常時マイク）は保持する。
 
           // stopListeningFnを非同期で呼び出し
           try {

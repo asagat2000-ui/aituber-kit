@@ -80,13 +80,11 @@ export function useBrowserSpeechRecognition(
       const wasAutoResume = isAutoResumeSession()
       clearAutoResumeSession()
 
-      // 常時マイク入力モードをオフに設定
-      if (settingsStore.getState().continuousMicListeningMode) {
-        logger.log('🔇 音声未検出により常時マイク入力モードをOFFに設定します。')
-        settingsStore.setState({ continuousMicListeningMode: false })
-      }
+      // p44: 無音でも設定はOFFにしない。
+      // OFFにして保存すると、起動のたびに灰色（未開始）へ戻ってしまう。
+      const wasContinuous = settingsStore.getState().continuousMicListeningMode
 
-      if (wasAutoResume) {
+      if (wasAutoResume || wasContinuous) {
         logger.log(
           '🔇 発話後の自動再開が設定時間を過ぎたため、音声認識を停止しました。'
         )
