@@ -1165,6 +1165,16 @@ const settingsMigrationSteps: Record<number, SettingsMigrationStep> = {
     migrated.wakeWordEnabled = true
     return migrated
   },
+  // 12: 呼びかけをOFFに戻し、常時マイクをONに戻す。
+  // 呼びかけ待ちは「決め言葉以外を捨てる」ため、
+  // 両親が普通に話しかけると無反応になる。
+  // p39 で問題なく会話できていた状態（常時マイクON・呼びかけ無し）に戻す。
+  12: (state) => {
+    const migrated = { ...state }
+    migrated.wakeWordEnabled = false
+    migrated.continuousMicListeningMode = true
+    return migrated
+  },
 }
 
 export const CURRENT_SETTINGS_VERSION = Object.keys(
