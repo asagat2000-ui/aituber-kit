@@ -3,12 +3,6 @@ import {
   clearAutoResumeSession,
   isAutoResumeSession,
 } from '@/features/voice/autoResumeState'
-import {
-  containsWakePhrase,
-  enterConversation,
-  isWakeStandby,
-  setWakeStandby,
-} from '@/features/voice/wakeWord'
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { getVoiceLanguageCode } from '@/utils/voiceLanguage'
 import settingsStore from '@/features/stores/settings'
@@ -17,16 +11,6 @@ import homeStore from '@/features/stores/home'
 import { useTranslation } from 'react-i18next'
 import { useSilenceDetection } from './useSilenceDetection'
 import { SpeakQueue } from '@/features/messages/speakQueue'
-import {
-  isMicPermissionGranted,
-  markMicPermissionGranted,
-} from '@/features/voice/micPermission'
-import { updateVoiceDebug } from '@/features/voice/voiceDebugState'
-import {
-  nextRestartDelay,
-  shouldArmNoSpeechTimer,
-  shouldStopOnNoSpeech,
-} from '@/features/voice/noSpeechPolicy'
 
 /**
  * ブラウザの音声認識APIを使用するためのカスタムフック
@@ -57,12 +41,6 @@ export function useBrowserSpeechRecognition(
   // ----- 開始処理中かどうかを追跡（排他制御用） -----
   const isStartingRef = useRef<boolean>(false)
 
-  // ----- デバッグ用の再起動回数 -----
-  const restartCountRef = useRef(0)
-
-  // ----- 会話モードの無音タイマー -----
-  const conversationTimerRef = useRef<NodeJS.Timeout | null>(null)
-
   // ----- キーボードトリガー関連 -----
   const keyPressStartTime = useRef<number | null>(null)
   const isKeyboardTriggered = useRef(false)
@@ -75,11 +53,7 @@ export function useBrowserSpeechRecognition(
     updateSpeechTimestamp,
     isSpeechEnded,
   } = useSilenceDetection({
-    onTextDetected: (text: string) => {
-      // 待機中（呼びかけ待ち）は勝手に送信しない
-      if (isWakeStandby()) return
-      onChatProcessStart(text)
-    },
+    onTextDetected: onChatProcessStart,
     transcriptRef,
     setUserMessage,
     speechDetectedRef,
@@ -96,21 +70,6 @@ export function useBrowserSpeechRecognition(
   // ----- 音声未検出時の停止処理を実行する共通関数 (Requirement 5.1) -----
   const handleNoSpeechTimeout = useCallback(
     async (stopListeningFn: () => Promise<void>) => {
-      const continuousNow = settingsStore.getState().continuousMicListeningMode
-
-      // 常時マイクは「開いたまま」が約束。ここで止めると以後ずっと無反応になる
-      if (
-        !shouldStopOnNoSpeech({
-          continuousMicListeningMode: continuousNow,
-          wakeStandby: isWakeStandby(),
-          initialSpeechTimeout,
-        })
-      ) {
-        logger.log('🎙️ 常時マイクのため、無音では停止しません。')
-        clearInitialSpeechCheckTimer()
-        return
-      }
-
       logger.log(
         `⏱️ ${initialSpeechTimeout}秒間音声が検出されませんでした。音声認識を停止します。`
       )
@@ -121,13 +80,10 @@ export function useBrowserSpeechRecognition(
       const wasAutoResume = isAutoResumeSession()
       clearAutoResumeSession()
 
-      // 待機中は無音が普通なので、常時マイクをOFFにせず静かに再開する
-      if (isWakeStandby()) {
-        logger.log(
-          '🌙 ウェイクワード待機中のため、常時マイク設定は変更しません。'
-        )
-        clearSilenceDetection()
-        return
+      // 常時マイク入力モードをオフに設定
+      if (settingsStore.getState().continuousMicListeningMode) {
+        logger.log('🔇 音声未検出により常時マイク入力モードをOFFに設定します。')
+        settingsStore.setState({ continuousMicListeningMode: false })
       }
 
       if (wasAutoResume) {
@@ -152,16 +108,7 @@ export function useBrowserSpeechRecognition(
       // 既存のタイマーをクリアしてから新しいタイマーを設定 (Requirement 5.2)
       clearInitialSpeechCheckTimer()
 
-      // 呼びかけ待ちの間は無音が普通なので、初期無音タイマーを張らない。
-      // 張ると5秒ごとにマイクが落ち、触るたびに再開する往復が起きる。
-      const continuous = settingsStore.getState().continuousMicListeningMode
-      if (
-        shouldArmNoSpeechTimer({
-          continuousMicListeningMode: continuous,
-          wakeStandby: isWakeStandby(),
-          initialSpeechTimeout,
-        })
-      ) {
+      if (initialSpeechTimeout > 0) {
         initialSpeechCheckTimerRef.current = setTimeout(() => {
           if (!speechDetectedRef.current && isListeningRef.current) {
             handleNoSpeechTimeout(stopListeningFn)
@@ -171,34 +118,6 @@ export function useBrowserSpeechRecognition(
     },
     [initialSpeechTimeout, clearInitialSpeechCheckTimer, handleNoSpeechTimeout]
   )
-
-  // ----- 会話モードを終える無音タイマー -----
-  const clearConversationTimer = useCallback(() => {
-    if (conversationTimerRef.current) {
-      clearTimeout(conversationTimerRef.current)
-      conversationTimerRef.current = null
-    }
-  }, [])
-
-  const armConversationTimer = useCallback(() => {
-    clearConversationTimer()
-    const settings = settingsStore.getState()
-    if (!settings.wakeWordEnabled) return
-    if (isWakeStandby()) return
-
-    const seconds = settings.wakeWordConversationTimeout
-    if (!(seconds > 0)) return
-
-    conversationTimerRef.current = setTimeout(() => {
-      logger.log('🌙 会話モードの無音タイムアウト。呼びかけ待ちに戻ります。')
-      setWakeStandby(true)
-      clearInitialSpeechCheckTimer()
-      clearSilenceDetection()
-      transcriptRef.current = ''
-      setUserMessage('')
-      speechDetectedRef.current = false
-    }, seconds * 1000)
-  }, [clearConversationTimer])
 
   // ----- 音声認識停止処理 -----
   const stopListening = useCallback(async () => {
@@ -211,7 +130,6 @@ export function useBrowserSpeechRecognition(
     // 各種タイマーをクリア
     clearSilenceDetection()
     clearInitialSpeechCheckTimer()
-    clearConversationTimer()
 
     // リスニング状態を更新
     isListeningRef.current = false
@@ -241,7 +159,6 @@ export function useBrowserSpeechRecognition(
   }, [
     clearSilenceDetection,
     clearInitialSpeechCheckTimer,
-    clearConversationTimer,
     recognition,
     isSpeechEnded,
     onChatProcessStart,
@@ -259,15 +176,10 @@ export function useBrowserSpeechRecognition(
       return false
     }
 
-    // このセッションで一度許可済みなら、デバイスを開き直さない。
-    // iOS では開くたびに描画が止まり、アバターがカクつく原因になる。
-    if (isMicPermissionGranted()) return true
-
     try {
       // getUserMediaを直接呼び出し、ブラウザのネイティブ許可モーダルを表示
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
       stream.getTracks().forEach((track) => track.stop())
-      markMicPermissionGranted()
       return true
     } catch (error) {
       // ユーザーが明示的に拒否した場合や、その他のエラーの場合
@@ -309,8 +221,7 @@ export function useBrowserSpeechRecognition(
       }
 
       // 既に認識が開始されている場合は、onendイベントを待って停止を確認
-      // ただし自然終了（onend済み）なら待つ必要がない。毎回500ms固まるのを避ける
-      if (isListeningRef.current && recognitionActiveRef.current) {
+      if (isListeningRef.current) {
         await new Promise<void>((resolve) => {
           let timeoutId: NodeJS.Timeout
 
@@ -365,12 +276,10 @@ export function useBrowserSpeechRecognition(
         }
 
         recognition.start()
-        settleUntilRef.current = Date.now() + 1500
         logger.log('Recognition started successfully')
         // リスニング状態を更新
         isListeningRef.current = true
         setIsListening(true)
-        updateVoiceDebug({ mic: true, standby: isWakeStandby(), error: '' })
       } catch (error) {
         logger.error('Error starting recognition:', error)
 
@@ -532,40 +441,15 @@ export function useBrowserSpeechRecognition(
       const transcript = Array.from(event.results)
         .map((result) => result[0].transcript)
         .join('')
-      updateVoiceDebug({
-        mic: true,
-        standby: isWakeStandby(),
-        lastEvent: 'onresult',
-        lastText: transcript.slice(0, 40),
-      })
 
       // 有意な変化があるかチェック
       const isSignificantChange =
         transcript.trim().length > lastTranscriptLength
       lastTranscriptLength = transcript.trim().length
 
-      // 待機中は「呼びかけ」だけを見る。会話は始めない
-      if (isWakeStandby()) {
-        const phrases = settingsStore.getState().wakeWordPhrases
-        if (containsWakePhrase(transcript, phrases)) {
-          logger.log('🌞 呼びかけを検出しました。会話を開始します。')
-          enterConversation()
-          transcriptRef.current = ''
-          setUserMessage('')
-          updateSpeechTimestamp()
-          speechDetectedRef.current = true
-          return
-        }
-        // 呼びかけ以外は表示もしない・保持もしない
-        transcriptRef.current = ''
-        setUserMessage('')
-        return
-      }
-
       if (isSignificantChange) {
         logger.log('🎤 有意な音声を検出しました（トランスクリプト変更あり）')
         updateSpeechTimestamp()
-        armConversationTimer()
         speechDetectedRef.current = true
         // 発話を検知したので自動再開セッションは終了
         clearAutoResumeSession()
@@ -597,12 +481,6 @@ export function useBrowserSpeechRecognition(
       // isListeningRef.currentがtrueの場合は再開
       if (isListeningRef.current) {
         logger.log('Restarting speech recognition...')
-        updateVoiceDebug({
-          mic: false,
-          standby: isWakeStandby(),
-          restarts: (restartCountRef.current += 1),
-          lastEvent: 'onend→再起動',
-        })
         // 再起動タイマーをrefに保存して追跡 (競合状態防止)
         restartTimeoutRef.current = setTimeout(() => {
           // setTimeout実行時に再度状態を確認 (競合状態防止)
@@ -610,21 +488,13 @@ export function useBrowserSpeechRecognition(
             startListening()
           }
           restartTimeoutRef.current = null
-        }, nextRestartDelay(settingsStore.getState().continuousMicListeningMode))
+        }, 1000)
       }
     }
 
     // 音声認識エラー時
     newRecognition.onerror = (event) => {
       logger.error('Speech recognition error:', event.error)
-      updateVoiceDebug({ error: String(event.error), lastEvent: 'onerror' })
-
-      // 呼びかけ待ちは「静かなのが正常」。ここで止めるとマイクが落ちる
-      if (event.error === 'no-speech' && isWakeStandby()) {
-        clearSilenceDetection()
-        clearInitialSpeechCheckTimer()
-        return
-      }
 
       // no-speechエラーの場合
       if (event.error === 'no-speech' && isListeningRef.current) {
@@ -653,7 +523,6 @@ export function useBrowserSpeechRecognition(
           isListeningRef.current &&
           !homeStore.getState().chatProcessing &&
           (settingsStore.getState().continuousMicListeningMode ||
-            settingsStore.getState().wakeWordEnabled ||
             isKeyboardTriggered.current)
         ) {
           logger.log('No speech detected, will restart via onend handler...')
@@ -717,17 +586,6 @@ export function useBrowserSpeechRecognition(
     return recognitionActiveRef.current
   }, [])
 
-  // onend からの再起動待ちかどうか。
-  // 待っている間に外から二重に再起動すると、1秒ごとに叩き直す往復になる
-  const isRestartPending = useCallback(
-    () => restartTimeoutRef.current !== null,
-    []
-  )
-
-  // 開始直後の揺らぎで「止まった」と誤判定しないための猶予
-  const settleUntilRef = useRef(0)
-  const isSettling = useCallback(() => Date.now() < settleUntilRef.current, [])
-
   // 戻り値オブジェクトをメモ化（Requirement 1.1, 1.4）
   const returnValue = useMemo(
     () => ({
@@ -740,8 +598,6 @@ export function useBrowserSpeechRecognition(
       startListening,
       stopListening,
       checkRecognitionActive,
-      isRestartPending,
-      isSettling,
     }),
     [
       userMessage,

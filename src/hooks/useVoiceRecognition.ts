@@ -12,11 +12,6 @@ import {
   markManualMicOff,
 } from '@/features/voice/autoResumeState'
 import { isSleepingNow } from '@/features/sleep/sleepStore'
-import { isWakeStandby, isWakeModeOn } from '@/features/voice/wakeWord'
-import {
-  shouldWatchdogRestart,
-  shouldWatchdogStart,
-} from '@/features/voice/restartPolicy'
 import { useBrowserSpeechRecognition } from './useBrowserSpeechRecognition'
 import { useWhisperRecognition } from './useWhisperRecognition'
 import { useRealtimeVoiceAPI } from './useRealtimeVoiceAPI'
@@ -85,12 +80,6 @@ export function useVoiceRecognition({
       'checkRecognitionActive' in currentHook
         ? (currentHook as any).checkRecognitionActive
         : null,
-    isRestartPending:
-      'isRestartPending' in currentHook
-        ? (currentHook as any).isRestartPending
-        : null,
-    isSettling:
-      'isSettling' in currentHook ? (currentHook as any).isSettling : null,
   })
   const voiceInputShortcutRef = useRef(voiceInputShortcut)
   const activeVoiceShortcutRef = useRef<string | null>(null)
@@ -109,12 +98,6 @@ export function useVoiceRecognition({
         'checkRecognitionActive' in currentHook
           ? (currentHook as any).checkRecognitionActive
           : null,
-      isRestartPending:
-        'isRestartPending' in currentHook
-          ? (currentHook as any).isRestartPending
-          : null,
-      isSettling:
-        'isSettling' in currentHook ? (currentHook as any).isSettling : null,
     }
   }, [currentHook])
 
@@ -148,20 +131,6 @@ export function useVoiceRecognition({
     if (homeStore.getState().chatProcessing) return
     // スリープ時間帯は発話後の自動再開をしない
     if (isSleepingNow()) return
-
-    // ウェイクワード運用中は、待機中でも呼びかけを拾うためマイクを開き直す
-    if (isWakeModeOn()) {
-      setTimeout(() => {
-        if (
-          !homeStore.getState().isSpeaking &&
-          !homeStore.getState().chatProcessing &&
-          !currentHookRef.current.isListening
-        ) {
-          currentHookRef.current.startListening()
-        }
-      }, 300)
-      return
-    }
 
     // 常時マイク入力モードがON: 従来どおり無条件で再開
     if (continuousMicListeningMode) {
@@ -256,10 +225,7 @@ export function useVoiceRecognition({
         return
       }
 
-      if (
-        !settingsStore.getState().continuousMicListeningMode &&
-        !isWakeModeOn()
-      ) {
+      if (!settingsStore.getState().continuousMicListeningMode) {
         return
       }
 
@@ -269,20 +235,8 @@ export function useVoiceRecognition({
       const checkRecognitionActive =
         currentHookRef.current.checkRecognitionActive
 
-      // 判断は restartPolicy に集約（再起動の予約中は叩き直さない）
-      const restartPending =
-        currentHookRef.current.isRestartPending?.() ?? false
-      const decisionInput = {
-        isListening,
-        isSpeaking,
-        isProcessing: chatProcessing,
-        isRecognitionActive: Boolean(checkRecognitionActive?.()),
-        isRestartPending: restartPending,
-        isSleeping: false,
-      }
-
       // マイクがOFFで、発話中でも処理中でもない場合は再開
-      if (shouldWatchdogStart(decisionInput) && !restartPending) {
+      if (!isListening && !isSpeaking && !chatProcessing) {
         logger.log(
           '🔄 常時マイク入力モード: マイクがOFFになっていたため、自動で再開します。'
         )
@@ -291,10 +245,13 @@ export function useVoiceRecognition({
       }
 
       // isListeningがtrueでも、実際にアクティブでない場合は再起動
-      // すでに onend からの再起動待ちなら、二重に叩き直さない。
-      // ここを見ないと「停止→100ms→開始」が1秒ごとに走り、動きが止まる
-      if (isListening && shouldWatchdogRestart(decisionInput)) {
-        if (!decisionInput.isRecognitionActive) {
+      if (
+        isListening &&
+        !isSpeaking &&
+        !chatProcessing &&
+        checkRecognitionActive
+      ) {
+        if (!checkRecognitionActive()) {
           logger.log(
             '🔄 常時マイク入力モード: 音声認識が非アクティブのため再起動します。'
           )

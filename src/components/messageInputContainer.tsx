@@ -3,7 +3,7 @@ import { useEffect } from 'react'
 import { MessageInput } from '@/components/messageInput'
 import homeStore from '@/features/stores/home'
 import settingsStore from '@/features/stores/settings'
-import { useVoiceBridge } from '@/features/voice/VoiceBridge'
+import { useVoiceRecognition } from '@/hooks/useVoiceRecognition'
 
 // 無音検出用の状態と変数を追加
 type Props = {
@@ -20,7 +20,10 @@ export const MessageInputContainer = (props: Props) => {
   )
 }
 
-const StandardMessageInputContainer = ({ focusOnMount = true }: Props) => {
+const StandardMessageInputContainer = ({
+  focusOnMount = true,
+  onChatProcessStart,
+}: Props) => {
   const isSpeaking = homeStore((s) => s.isSpeaking)
   const continuousMicListeningMode = settingsStore(
     (s) => s.continuousMicListeningMode
@@ -38,7 +41,7 @@ const StandardMessageInputContainer = ({ focusOnMount = true }: Props) => {
     handleStopSpeaking,
     startListening,
     stopListening,
-  } = useVoiceBridge()
+  } = useVoiceRecognition({ onChatProcessStart })
 
   // 常時マイク入力モードの切り替え
   const toggleContinuousMode = () => {

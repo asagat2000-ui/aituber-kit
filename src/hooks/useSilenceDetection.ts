@@ -1,9 +1,4 @@
 import { logger } from '@/lib/logger'
-import { isWakeStandby } from '@/features/voice/wakeWord'
-import {
-  shouldArmNoSpeechTimer,
-  shouldStopOnNoSpeech,
-} from '@/features/voice/noSpeechPolicy'
 import { useState, useCallback, useRef, MutableRefObject } from 'react'
 import settingsStore from '@/features/stores/settings'
 import toastStore from '@/features/stores/toast'
@@ -85,24 +80,9 @@ export function useSilenceDetection({
         const initialSpeechTimeout =
           settingsStore.getState().initialSpeechTimeout
 
-        // 常時マイクは「開いたまま」が約束。ここで止めると以後ずっと無反応になる
-        const continuousNow =
-          settingsStore.getState().continuousMicListeningMode
-        const allowStop = shouldStopOnNoSpeech({
-          continuousMicListeningMode: continuousNow,
-          wakeStandby: isWakeStandby(),
-          initialSpeechTimeout,
-        })
-        const armTimer = shouldArmNoSpeechTimer({
-          continuousMicListeningMode: continuousNow,
-          wakeStandby: isWakeStandby(),
-          initialSpeechTimeout,
-        })
-
         // 無音状態が設定値以上続いた場合は、テキストの有無に関わらず音声認識を停止
         if (
-          armTimer &&
-          allowStop &&
+          initialSpeechTimeout > 0 &&
           silenceDuration >= initialSpeechTimeout * 1000 &&
           !speechEndedRef.current &&
           !speechDetectedRef.current
@@ -118,6 +98,14 @@ export function useSilenceDetection({
           if (silenceCheckInterval.current) {
             clearInterval(silenceCheckInterval.current)
             silenceCheckInterval.current = null
+          }
+
+          // 常時マイク入力モードをOFFに設定
+          if (settingsStore.getState().continuousMicListeningMode) {
+            logger.log(
+              '🔇 長時間無音検出により常時マイク入力モードをOFFに設定します。'
+            )
+            settingsStore.setState({ continuousMicListeningMode: false })
           }
 
           // stopListeningFnを非同期で呼び出し
@@ -142,7 +130,6 @@ export function useSilenceDetection({
         }
         // 無音状態が設定値以上続いたかつテキストがある場合は自動送信
         else if (
-          !isWakeStandby() &&
           settingsStore.getState().noSpeechTimeout > 0 &&
           silenceDuration >= noSpeechTimeoutMs &&
           !speechEndedRef.current
