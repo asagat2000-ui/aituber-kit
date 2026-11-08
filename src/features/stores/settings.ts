@@ -1158,6 +1158,13 @@ const settingsMigrationSteps: Record<number, SettingsMigrationStep> = {
     migrated.wakeWordEnabled = false
     return migrated
   },
+  // 11: 呼びかけを再びONにする。
+  // 段階1では「送信の関所」として実装したため、マイクを止める心配がない。
+  11: (state) => {
+    const migrated = { ...state }
+    migrated.wakeWordEnabled = true
+    return migrated
+  },
 }
 
 export const CURRENT_SETTINGS_VERSION = Object.keys(

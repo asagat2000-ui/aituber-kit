@@ -1,3 +1,4 @@
+import { passWakeGate } from '@/features/voice/wakeGate'
 import { LiveConversation } from './liveConversation'
 import { useEffect } from 'react'
 import { MessageInput } from '@/components/messageInput'
@@ -41,7 +42,13 @@ const StandardMessageInputContainer = ({
     handleStopSpeaking,
     startListening,
     stopListening,
-  } = useVoiceRecognition({ onChatProcessStart })
+  } = useVoiceRecognition({
+    onChatProcessStart: (text: string) => {
+      // 呼びかけの関所。通ったものだけ送る。マイクには触れない
+      if (!passWakeGate(text)) return
+      onChatProcessStart(text)
+    },
+  })
 
   // 常時マイク入力モードの切り替え
   const toggleContinuousMode = () => {
