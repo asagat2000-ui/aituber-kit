@@ -502,7 +502,7 @@
   "ContinuousMicModeOn": "常時マイク入力モードがオンです",
   "ContinuousMicModeOff": "常時マイク入力モードがオフです",
   "ListeningContinuously": "音声入力を待機中...",
-  "ContinuousMicInfo": "AIの発話が終了したタイミングで自動的にマイク入力を再開します。設定された無音時間経過後に自動的に送信します。\n音声認識がされないまま設定時間を超えると、自動的に常時マイク入力はOFFになるため、常にONにしておきたい場合は音声認識タイムアウトを0秒に設定してください。",
+  "ContinuousMicInfo": "AIの発話が終了したタイミングで自動的にマイク入力を再開します。設定された無音時間経過後に自動的に送信します。\\nONのままでも、音声が検出されないことを理由に自動でOFFになることはありません。",
   "UsingOpenAITTS": "OpenAIを使用する",
   "OpenAITTSInfo": "OpenAIを使用しています。多言語に対応可能です。AIサービスでOpenAIを選択している場合は下記のAPIキーを設定する必要はありません。",
   "OpenAITTSVoice": "ボイスタイプ",

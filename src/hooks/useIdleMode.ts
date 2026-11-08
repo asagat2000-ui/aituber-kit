@@ -194,10 +194,26 @@ export function useIdleMode({
     let phrase: IdlePhrase
 
     if (idlePlaybackMode === 'sequential') {
-      // 順番モード
-      phrase = pool[currentPhraseIndexRef.current % pool.length]
-      currentPhraseIndexRef.current =
-        (currentPhraseIndexRef.current + 1) % pool.length
+      // 順番モード: order順のまま、まだ話していないものを選ぶ。
+      // 除外後の配列にインデックスを当てると位置がずれてセリフが飛ぶため、
+      // 元の並びに対して現在位置から順に探す。
+      const total = sortedPhrases.length
+      let chosen: IdlePhrase | undefined
+      for (let step = 0; step < total; step += 1) {
+        const index = (currentPhraseIndexRef.current + step) % total
+        if (!isPhraseUsed(sortedPhrases[index].text)) {
+          chosen = sortedPhrases[index]
+          currentPhraseIndexRef.current = (index + 1) % total
+          break
+        }
+      }
+      if (!chosen) {
+        // すべて一度話したら先頭からやり直す
+        const index = currentPhraseIndexRef.current % total
+        chosen = sortedPhrases[index]
+        currentPhraseIndexRef.current = (index + 1) % total
+      }
+      phrase = chosen
     } else {
       // ランダムモード
       const randomIndex = Math.floor(Math.random() * pool.length)
