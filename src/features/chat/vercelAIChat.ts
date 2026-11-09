@@ -10,6 +10,7 @@ import {
 import settingsStore from '../stores/settings'
 import { getSessionId } from '@/utils/sessionId'
 import type { AIChatResponseStreamOptions } from './aiChatFactory'
+import { shouldSendTemperature } from '@/features/chat/shouldSendTemperature'
 
 // 推論/思考チャンクを通常テキストと区別するためのマーカー
 // null byteプレフィックスはLLMテキスト出力に現れないため安全
@@ -105,7 +106,7 @@ export async function getVercelAIChatResponse(messages: Message[]) {
     localLlmUrl,
     azureEndpoint,
     useSearchGrounding,
-    temperature,
+    temperature: rawTemperature,
     maxTokens,
     reasoningMode,
     reasoningEffort,
@@ -116,6 +117,15 @@ export async function getVercelAIChatResponse(messages: Message[]) {
     customApiBody,
     customApiIncludeMimeType,
   } = getAIConfig()
+
+  // Gemini 系は temperature を無視するため送らない（p49）
+  const temperature = shouldSendTemperature({
+    selectAIService,
+    selectAIModel,
+    customModel,
+  })
+    ? rawTemperature
+    : undefined
 
   // APIエンドポイントを決定
   const apiEndpoint = getApiEndpoint(selectAIService)

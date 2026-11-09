@@ -158,7 +158,7 @@ export class LipSync {
     }
     if (this.unlockBanner) return
     const el = document.createElement('div')
-    el.textContent = '音が止まっています。画面をタップしてください'
+    el.textContent = '音声の準備中です。画面をタップすると声が出ます'
     el.style.cssText = [
       'position:fixed',
       'left:50%',

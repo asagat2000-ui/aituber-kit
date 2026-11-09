@@ -49,6 +49,7 @@ export const MessageInput = ({
   isSpeaking,
   silenceTimeoutRemaining,
   continuousMicListeningMode,
+  onToggleContinuousMode,
 }: Props) => {
   const chatProcessing = homeStore((s) => s.chatProcessing)
   const slidePlaying = slideStore((s) => s.isPlaying)
@@ -405,6 +406,12 @@ export const MessageInput = ({
   )
 
   const handleMicClick = (event: React.MouseEvent<HTMLButtonElement>) => {
+    // p50: 常時マイク中でも押せるようにし、押したらOFFへ戻す。
+    // これまでは disabled で押せず、利用者が止める手段が無かった。
+    if (continuousMicListeningMode) {
+      onToggleContinuousMode(event)
+      return
+    }
     onClickMicButton(event)
   }
 
@@ -603,7 +610,9 @@ export const MessageInput = ({
                     ? `${t('AnswerGenerating')}${loadingDots}`
                     : continuousMicListeningMode && isMicRecording
                       ? t('ListeningContinuously')
-                      : continuousMicListeningMode
+                      : continuousMicListeningMode &&
+                          !isSpeaking &&
+                          !chatProcessing
                         ? t('MicStoppedTapToRestart')
                         : isMultiModalSupported && !isSmallScreen
                           ? `${t('EnterYourQuestion')} (${t('PasteImageSupported') || 'Paste image supported'})`
@@ -650,9 +659,7 @@ export const MessageInput = ({
                 isProcessingIcon={
                   continuousMicListeningMode ? '24/Microphone' : '24/PauseAlt'
                 }
-                disabled={
-                  continuousMicListeningMode || chatProcessing || isSpeaking
-                }
+                disabled={chatProcessing || isSpeaking}
                 onClick={handleMicClick}
                 className={`!h-10 !min-h-10 !w-10 !min-w-10 !rounded-full !p-2 sm:!h-[46px] sm:!min-h-[46px] sm:!w-[46px] sm:!min-w-[46px] ring-0 transition-colors duration-200 focus:outline-none focus-visible:outline-none focus-visible:ring-0 ${
                   isMicRecording && !continuousMicListeningMode

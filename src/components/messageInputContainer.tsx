@@ -5,6 +5,7 @@ import { MessageInput } from '@/components/messageInput'
 import homeStore from '@/features/stores/home'
 import settingsStore from '@/features/stores/settings'
 import { useVoiceRecognition } from '@/hooks/useVoiceRecognition'
+import { SpeakQueue } from '@/features/messages/speakQueue'
 
 // 無音検出用の状態と変数を追加
 type Props = {
@@ -67,7 +68,12 @@ const StandardMessageInputContainer = ({
       isMicRecording={isListening}
       onChangeUserMessage={handleInputChange}
       onClickMicButton={toggleListening}
-      onClickSendButton={handleSendMessage}
+      onClickSendButton={(event) => {
+        // p50: 新しい発言を送るとき、前の返事の音声が残っていれば止める。
+        // 止めないと、前の返事の末尾と次の返事が重なって聞き取れなくなる。
+        SpeakQueue.stopAll()
+        handleSendMessage()
+      }}
       onClickStopButton={handleStopSpeaking}
       isSpeaking={isSpeaking}
       silenceTimeoutRemaining={silenceTimeoutRemaining}
