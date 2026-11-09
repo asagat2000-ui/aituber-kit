@@ -603,9 +603,11 @@ export const MessageInput = ({
                     ? `${t('AnswerGenerating')}${loadingDots}`
                     : continuousMicListeningMode && isMicRecording
                       ? t('ListeningContinuously')
-                      : isMultiModalSupported && !isSmallScreen
-                        ? `${t('EnterYourQuestion')} (${t('PasteImageSupported') || 'Paste image supported'})`
-                        : t('EnterYourQuestion')
+                      : continuousMicListeningMode
+                        ? t('MicStoppedTapToRestart')
+                        : isMultiModalSupported && !isSmallScreen
+                          ? `${t('EnterYourQuestion')} (${t('PasteImageSupported') || 'Paste image supported'})`
+                          : t('EnterYourQuestion')
                 }
                 onChange={handleTextChange}
                 onPaste={handlePaste}

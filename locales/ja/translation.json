@@ -973,5 +973,6 @@
   "WakeWordPhrases": "決め言葉",
   "WakeWordPhrasesInfo": "複数あるときはカンマ（,）で区切ります。短い言葉だけにすると、テレビや物音で誤って反応しやすくなります。",
   "WakeWordConversationTimeout": "会話を終える無音時間",
-  "WakeWordConversationTimeoutInfo": "この秒数だけ話しかけられないと会話を終了し、呼びかけ待ちに戻ります。"
+  "WakeWordConversationTimeoutInfo": "この秒数だけ話しかけられないと会話を終了し、呼びかけ待ちに戻ります。",
+  "MicStoppedTapToRestart": "マイクが止まっています。マイクのマークを押すと再開します。"
 }

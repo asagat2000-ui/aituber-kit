@@ -973,5 +973,6 @@
   "WakeWordPhrases": "Wake words",
   "WakeWordPhrasesInfo": "Separate multiple words with commas. Very short words are more likely to trigger on TV or background noise.",
   "WakeWordConversationTimeout": "Silence before ending the conversation",
-  "WakeWordConversationTimeoutInfo": "After this many seconds without speech, the conversation ends and it waits for the wake word again."
+  "WakeWordConversationTimeoutInfo": "After this many seconds without speech, the conversation ends and it waits for the wake word again.",
+  "MicStoppedTapToRestart": "The microphone is stopped. Tap the microphone to restart."
 }
